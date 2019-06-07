@@ -34,7 +34,8 @@
 #define CS_PAGE_SIZE (size_t)4096
 #define CS_CACHE_SIZE (size_t)(CS_PAGE_SIZE * 8)
 #define CS_MEM_VAL_BAD (size_t) ~0
-#define CS_NUM_PAGES CS_CACHE_SIZE/CS_PAGE_SIZE
-
+#define CS_NUM_FRAMES CS_CACHE_SIZE/CS_PAGE_SIZE
+#define CS_MIN(a, b) a < b ? a : b
+;
 
 #endif // CACHESERV_DEFINES_H

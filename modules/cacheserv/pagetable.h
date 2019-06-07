@@ -33,7 +33,6 @@
 
 #include "core/map.h"
 #include "core/object.h"
-#include "core/ordered_hash_map.h"
 #include "core/os/mutex.h"
 #include "core/os/thread.h"
 #include "core/rid.h"
@@ -43,7 +42,12 @@
 
 #include "cacheserv_defines.h"
 
-struct Page {
+typedef int file_descriptor;
+typedef uint32_t frame_id;
+typedef uint32_t page_id;
+
+
+struct Frame {
 
 	enum CachePolicy {
 		KEEP_FOREVER,
@@ -53,27 +57,22 @@ struct Page {
 	uint8_t *memory_region;
 	uint64_t data_offset;
 	CachePolicy cache_policy;
-	uint8_t alloc_step;
 	bool recently_used;
 	bool used;
+	bool dirty;
 
-	Page() {}
+	Frame() {}
 
-	Page(
+	Frame(
 			uint8_t *i_memory_region,
 			uint64_t i_data_offset,
 			CachePolicy i_cache_policy = CachePolicy::FIFO) :
 			memory_region(i_memory_region),
 			data_offset(i_data_offset),
 			cache_policy(i_cache_policy),
-			alloc_step(0),
 			recently_used(false),
-			used(false) {}
-};
-
-struct Range {
-	size_t start;
-	size_t end;
+			used(false),
+			dirty(false) {}
 };
 
 struct Region {
@@ -81,37 +80,38 @@ struct Region {
 	size_t size; // Size in pages.
 	size_t prev;
 	size_t next; // In case the region is not contiguous.
+	uint8_t *mem_ptr;
 
 	Region() :
 			start_page_idx(CS_MEM_VAL_BAD),
 			size(0),
 			prev(CS_MEM_VAL_BAD),
-			next(CS_MEM_VAL_BAD) {}
+			next(CS_MEM_VAL_BAD),
+			mem_ptr(NULL) {}
 
 	Region(
 			size_t i_start_page_idx,
 			size_t i_size,
 			size_t i_prev,
-			size_t i_next) :
+			size_t i_next,
+			uint8_t *i_ptr) :
 			start_page_idx(i_start_page_idx),
 			size(i_size),
 			prev(i_prev),
-			next(i_next) {}
+			next(i_next),
+			mem_ptr(i_ptr) {}
 };
 
 struct PageTable {
-	Vector<Page> pages;
-	Map<size_t, Region> used_regions;
-	Map<size_t, Region> free_regions;
+	Vector<Frame> frames;
+	Map<page_id, frame_id> page_frame_map;
+	Map<file_descriptor, Vector<page_id>> file_page_map;
 	uint8_t *memory_region = NULL;
 	size_t available_space;
 	size_t used_space;
 	size_t total_space;
 
-	void create();
-	size_t allocate(size_t length);
-	void free(size_t index);
-	void prepare_region(size_t start, size_t size, size_t *data_offset);
+	PageTable();
 
 	~PageTable();
 };

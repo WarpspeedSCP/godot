@@ -75,7 +75,10 @@ public:
 	void free_regions(size_t idx);
 
 	void prepare_region(size_t start, size_t size, size_t *data_offset);
-	int write_to_regions(void *data, size_t lenght, size_t start_region);
+	Vector<Region> list_regions(size_t start_idx);
+
+	// int write_to_single_region(void *data, size_t length, size_t data_offset, size_t region_idx);
+	// int write_to_regions(void *data, size_t length, size_t start_region);
 };
 
 class _FileCacheServer : public Object {
