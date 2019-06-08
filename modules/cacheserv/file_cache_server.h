@@ -1,5 +1,5 @@
 /*************************************************************************/
-/*  allocatedmemoryaccess.cpp                                            */
+/*  file_cache_server.h                                                    */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
@@ -28,10 +28,9 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef ALLOCATEDMEMORYACCESS_H
-#define ALLOCATEDMEMORYACCESS_H
+#ifndef FILE_CACHE_SERVER_H
+#define FILE_CACHE_SERVER_H
 
-#include "core/map.h"
 #include "core/object.h"
 #include "core/os/mutex.h"
 #include "core/os/thread.h"
@@ -40,26 +39,52 @@
 #include "core/variant.h"
 #include "core/vector.h"
 
-#include "pagetable.h"
+#include "cacheserv_defines.h"
+#include "page_table.h"
 
-class AllocatedMemoryAccess {
-public:
+class FileCacheServer : public Object {
+	GDCLASS(FileCacheServer, Object);
 
-	AllocatedMemoryAccess(size_t length, PageTable *pt);
-	size_t write(uint8_t *data, size_t length);
-	size_t read(uint8_t *buf, size_t length);
-	size_t seek(size_t offset, int mode);
+	static FileCacheServer *singleton;
+	bool exit_thread;
+	PageTable page_table;
+	HashMap<RID, data_descriptor> files;
+	Thread *thread;
+	Mutex *mutex;
 
 private:
-	PageTable *pt;
-	Vector<Region> alloc_regions;
-	size_t offset = 0;
-	size_t offset_region = 0;
-	size_t offset_in_curr_region = 0;
-	size_t total_regions;
-	size_t total_len;
-	size_t id;
+	static void thread_func(void *p_udata);
+
+protected:
+	static void _bind_methods();
+
+public:
+	FileCacheServer();
+	~FileCacheServer();
+
+	FileCacheServer *get_singleton();
+
+	Error init();
+
+	void lock();
+	void unlock();
+
+
 
 };
 
-#endif // ALLOCATEDMEMORYACCESS_H
+class _FileCacheServer : public Object {
+	GDCLASS(_FileCacheServer, Object);
+
+	friend class FileCacheServer;
+	static _FileCacheServer *singleton;
+
+protected:
+	static void _bind_methods();
+
+public:
+	_FileCacheServer();
+	static _FileCacheServer *get_singleton();
+};
+
+#endif // FILE_CACHE_SERVER_H
