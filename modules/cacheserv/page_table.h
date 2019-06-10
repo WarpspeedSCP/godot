@@ -91,11 +91,12 @@ struct DescriptorInfo {
 struct PageTable {
 	Vector<Frame> frames;
 	Map<page_id, frame_id> page_frame_map;
-	Map<data_descriptor, DescriptorInfo > file_page_map;
+	Map<data_descriptor, DescriptorInfo *> file_page_map;
 	uint8_t *memory_region = NULL;
 	size_t available_space;
 	size_t used_space;
 	size_t total_space;
+	Mutex *m;
 
 	PageTable();
 
