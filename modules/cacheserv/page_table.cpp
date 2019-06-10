@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <time.h>
 
 #include "page_table.h"
@@ -9,28 +10,28 @@
 
 // The number of bytes after the previous page offset for the offset a.
 #define PARTIAL_SIZE(a) (a % CS_PAGE_SIZE)
+
 // Extract offset from GUID by masking the range.
-#define GET_FILE_OFFSET_FROM_GUID(guid) (guid & 0x0000FFFFFFFFFFFF)
+#define GET_FILE_OFFSET_FROM_GUID(guid) (guid & 0x000000FFFFFFFFFF)
+
 // Round off to the previous page offset.
 #define GET_PAGE(a) (a - PARTIAL_SIZE(a))
 
-
 /**
- *  A page is identified with a 64 bit GUID where the 16 most significant bits act as the
- *  differenciator. The 48 least significant bits represent the offset of the referred page
+ *  A page is identified with a 64 bit GUID where the 24 most significant bits act as the
+ *  differenciator. The 40 least significant bits represent the offset of the referred page
  *  in its associated data source.
  *
  *  For example-
  *
- * 	mask: 0x0000FFFFFFFFFFFF
- *  GUID: 0x21D300000000401D
+ * 	mask: 0x000000FFFFFFFFFF
+ *  GUID: 0x21D30E000000401D
  *
  *  Here, the offset that this page GUID refers to is 0x401D.
- *  Its range offset is 0x21D3000000000000.
+ *  Its range offset is 0x21D30E0000000000.
  *
  *  This lets us distinguish between pages associated with different data sources.
  */
-
 
 // Get the GUID of the current offset.
 // We can either get the GUID associated with an offset for the particular data source,
@@ -39,47 +40,53 @@
 // Returns-
 // The GUID, if we are not making a query, or if the page at this offset is already tracked.
 // CS_MEM_VAL_BAD if we are making a query and the current page is not tracked.
-_FORCE_INLINE_ page_id get_page_guid(DescriptorInfo di, size_t offset, bool query) {
+_FORCE_INLINE_ page_id get_page_guid(const DescriptorInfo &di, size_t offset, bool query) {
 	page_id x = di.range_offset | GET_PAGE(offset);
-	if(query && di.pages.find(x) == CS_MEM_VAL_BAD) { return CS_MEM_VAL_BAD; }
+	if (query && di.pages.find(x) == CS_MEM_VAL_BAD) {
+		return CS_MEM_VAL_BAD;
+	}
 	return x;
 }
 
-
-static Set<size_t> ranges;
+static Set<size_t> ranges = Set<size_t>();
 static Vector<page_id> pages;
 
-
-// Create a new DescriptorInfo with a new random namespace defined by 16 most significant bits.
+// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
 DescriptorInfo::DescriptorInfo(FileAccess *fa) {
-
-	srandom(time(0));
-	size_t new_range = (size_t)random() << 48;
+	size_t new_range = (size_t)random() << 40;
+	printf("DescriptorInfo : new_range (0) = %lx\n", new_range);
 
 	while (ranges.has(new_range)) {
-		new_range = (size_t)random() << 48;
+
+		new_range = (size_t)random() << 40;
 	}
+
+	ranges.insert(new_range);
+
+	printf("DescriptorInfo : new_range (1) = %lx\n", new_range);
 
 	range_offset = new_range;
 	internal_data_source = fa;
 	offset = 0;
 	total_size = internal_data_source->get_len();
-}
 
+	for (Set<ObjectID>::Element *i = ranges.front(); i; i = i->next())
+		printf("\t\t%lx\n", i->get());
+}
 
 // Remove the range offset and all pages associated with the DescriptorInfo.
 DescriptorInfo::~DescriptorInfo() {
 	ranges.erase(range_offset);
-
-	for(int i = 0; i < pages.size(); ++i) {
-		if((pages[i] & 0xFFFF000000000000) == range_offset)
+	printf("\tDescriptorInfo::~DescriptorInfo called\n");
+	for (int i = 0; i < pages.size(); ++i) {
+		if ((pages[i] & 0xFFFFFF0000000000) == range_offset)
 			pages.set(i, CS_MEM_VAL_BAD);
 	}
 
 	pages.sort();
 
-	for(int i = 0; i < pages.size(); i++) {
-		if(pages[i] == CS_MEM_VAL_BAD) {
+	for (int i = 0; i < pages.size(); i++) {
+		if (pages[i] == CS_MEM_VAL_BAD) {
 			pages.resize(i);
 			break;
 		}
@@ -90,6 +97,12 @@ PageTable::~PageTable() {
 	if (memory_region) {
 		memdelete_arr(memory_region);
 	}
+
+	if(file_page_map.size()) {
+		for(Map<data_descriptor, DescriptorInfo *>::Element *i = file_page_map.front(); i; i = i->next()) {
+			memdelete(i->value());
+		}
+	}
 }
 
 PageTable::PageTable() {
@@ -99,6 +112,8 @@ PageTable::PageTable() {
 	frames.clear();
 	ranges.clear();
 	pages.clear();
+
+	m = Mutex::create();
 
 	available_space = CS_CACHE_SIZE;
 	used_space = 0;
@@ -114,31 +129,29 @@ PageTable::PageTable() {
 		frames.push_back(
 				Frame(memory_region + i * CS_PAGE_SIZE));
 	}
-
 }
 
 // Data descriptors are unique 16 bit IDs to represent data sources.
 int PageTable::get_new_data_descriptor() {
-	srandom(time(0));
 	int dd = -1;
+
 	while (file_page_map.has(dd = random() & 0x0000FFFF))
 		;
 	return dd;
 }
 
-
 int PageTable::add_data_source(FileAccess *data_source) {
 	int new_dd = get_new_data_descriptor();
-	file_page_map.insert(new_dd, DescriptorInfo(data_source));
+	file_page_map.insert(new_dd, memnew(DescriptorInfo(data_source)));
 	seek(new_dd, 0, SEEK_SET);
 	return new_dd;
 }
-
 
 // !!! takes mutable references to all params.
 // This operation selects a new frame, or evicts an old frame to hold a new page.
 void PageTable::do_paging_op(DescriptorInfo &desc_info, size_t &curr_page, size_t &curr_frame, size_t extra_offset) {
 
+	curr_frame = CS_MEM_VAL_BAD;
 	// Find a free frame.
 	for (int i = 0; i < CS_NUM_FRAMES; ++i) {
 		if (!frames[i].used) {
@@ -148,21 +161,24 @@ void PageTable::do_paging_op(DescriptorInfo &desc_info, size_t &curr_page, size_
 			f.recently_used = true;
 			curr_frame = i;
 			break;
-
 		}
 	}
 
+	printf("do_paging_op : curr_frame = %lx\n", curr_frame);
+
 	// If there are no free frames, we evict an old one according to the paging/caching algo (TODO).
 	if (curr_frame == CS_MEM_VAL_BAD) {
+		printf("must evict\n");
 		// Evict other page somehow...
 		// Remove prev page-frame mappings and associated pages.
 
-		srandom(time(0));
 		page_id page_to_evict = random() % pages.size();
 
 		page_to_evict = pages[page_to_evict];
 
 		frame_id frame_to_evict = page_frame_map[page_to_evict];
+
+	printf("Evicting page %lx mapped to frame %lx\n", page_to_evict, frame_to_evict);
 
 		Frame &f = frames.ptrw()[frame_to_evict];
 		if (f.dirty) {
@@ -184,6 +200,7 @@ void PageTable::do_paging_op(DescriptorInfo &desc_info, size_t &curr_page, size_
 
 		// We reuse the frame we evicted.
 		curr_frame = frame_to_evict;
+		printf("do_paging_op : curr_frame = %lx\n", curr_frame);
 		f.used = true;
 		f.recently_used = true;
 	}
@@ -195,10 +212,12 @@ void PageTable::do_paging_op(DescriptorInfo &desc_info, size_t &curr_page, size_
 void PageTable::do_load_op(DescriptorInfo &desc_info, size_t &curr_page, size_t &curr_frame, size_t extra_offset) {
 
 	// Get the GUID of the page at the current offset.
-	curr_page = get_page_guid(desc_info, desc_info.offset + extra_offset, false);
+	curr_page = get_page_guid(desc_info, extra_offset, false);
+	printf("do_load_op : curr_page = %lx\n", curr_page);
 
 	// Add the current page to the list of tracked pages.
 	desc_info.pages.ordered_insert(curr_page);
+	pages.ordered_insert(curr_page);
 
 	// Perform a paging operation.
 	do_paging_op(desc_info, curr_page, curr_frame);
@@ -212,6 +231,7 @@ void PageTable::do_load_op(DescriptorInfo &desc_info, size_t &curr_page, size_t 
 		if (check_incomplete_nonfinal_page_load(desc_info, curr_page, curr_frame, extra_offset)) {
 			ERR_PRINT("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.")
 		} else {
+			printf("do_load_op : loaded 0x%lx bytes\n", CS_PAGE_SIZE);
 		}
 	}
 }
@@ -235,11 +255,10 @@ _FORCE_INLINE_ bool PageTable::check_incomplete_nonfinal_page_load(DescriptorInf
  *  the current DescriptorInfo at the correct position.
  */
 
-
 // Perform a read operation.
 size_t PageTable::read(data_descriptor dd, void *buffer, size_t length) {
 
-	Map<data_descriptor, DescriptorInfo>::Element *elem = file_page_map.find(dd);
+	Map<data_descriptor, DescriptorInfo *>::Element *elem = file_page_map.find(dd);
 
 	if (!elem) {
 
@@ -247,7 +266,7 @@ size_t PageTable::read(data_descriptor dd, void *buffer, size_t length) {
 
 	} else {
 
-		DescriptorInfo desc_info = elem->get();
+		DescriptorInfo &desc_info = *(elem->get());
 		size_t final_partial_length = PARTIAL_SIZE(length);
 		size_t curr_page = CS_MEM_VAL_BAD, curr_frame = CS_MEM_VAL_BAD, buffer_offset = 0;
 
@@ -262,7 +281,7 @@ size_t PageTable::read(data_descriptor dd, void *buffer, size_t length) {
 			} else {
 				// Page is not mapped, do load op.
 				// This will update the current page and frame.
-				do_load_op(desc_info, curr_frame, curr_page, buffer_offset - desc_info.offset);
+				do_load_op(desc_info, curr_page, curr_frame, desc_info.offset + buffer_offset);
 			}
 
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset)
@@ -271,10 +290,9 @@ size_t PageTable::read(data_descriptor dd, void *buffer, size_t length) {
 			// We can copy only CS_PAGE_SIZE - PARTIAL_SIZE(desc_info.offset) which gives us the number
 			//  of bytes from the current offset to the end of the page.
 			memcpy(
-				(uint8_t *)buffer + buffer_offset,
-				frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset),
-				CS_PAGE_SIZE - PARTIAL_SIZE(desc_info.offset)
-			);
+					(uint8_t *)buffer + buffer_offset,
+					frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset),
+					CS_PAGE_SIZE - PARTIAL_SIZE(desc_info.offset));
 			buffer_offset += CS_PAGE_SIZE - PARTIAL_SIZE(desc_info.offset);
 		}
 
@@ -289,11 +307,14 @@ size_t PageTable::read(data_descriptor dd, void *buffer, size_t length) {
 			} else {
 				// Page is not mapped, do load op.
 
-				do_load_op(desc_info, curr_frame, curr_page, buffer_offset - desc_info.offset);
+				do_load_op(desc_info, curr_page, curr_frame, desc_info.offset + buffer_offset);
 			}
 
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset) gives us the start
-			memcpy((uint8_t *)buffer + buffer_offset, frames[curr_frame].memory_region, CS_PAGE_SIZE);
+			memcpy(
+					(uint8_t *)buffer + buffer_offset,
+					frames[curr_frame].memory_region,
+					CS_PAGE_SIZE);
 			buffer_offset += CS_PAGE_SIZE;
 		}
 
@@ -306,7 +327,7 @@ size_t PageTable::read(data_descriptor dd, void *buffer, size_t length) {
 			} else {
 				// Page is not mapped, do load op.
 
-				do_load_op(desc_info, curr_frame, curr_page, buffer_offset - desc_info.offset);
+				do_load_op(desc_info, curr_page, curr_frame, desc_info.offset + buffer_offset);
 			}
 
 			memcpy((uint8_t *)buffer + buffer_offset, frames[curr_frame].memory_region, final_partial_length);
@@ -317,7 +338,7 @@ size_t PageTable::read(data_descriptor dd, void *buffer, size_t length) {
 		desc_info.offset += buffer_offset;
 
 		// Update descriptor info.
-		file_page_map.insert(dd, desc_info);
+		// file_page_map.insert(dd, desc_info);
 
 		return buffer_offset;
 	}
@@ -325,7 +346,7 @@ size_t PageTable::read(data_descriptor dd, void *buffer, size_t length) {
 
 // Similar to the read operation but opposite data flow.
 size_t PageTable::write(data_descriptor dd, void *data, size_t length) {
-	Map<data_descriptor, DescriptorInfo>::Element *elem = file_page_map.find(dd);
+	Map<data_descriptor, DescriptorInfo *>::Element *elem = file_page_map.find(dd);
 
 	if (!elem) {
 
@@ -334,7 +355,7 @@ size_t PageTable::write(data_descriptor dd, void *data, size_t length) {
 	} else {
 
 		size_t final_partial_length = (length % CS_PAGE_SIZE);
-		DescriptorInfo desc_info = elem->get();
+		DescriptorInfo &desc_info = *(elem->get());
 		size_t curr_page = CS_MEM_VAL_BAD, curr_frame = CS_MEM_VAL_BAD, data_offset = 0;
 
 		// Special handling of first page.
@@ -346,17 +367,16 @@ size_t PageTable::write(data_descriptor dd, void *data, size_t length) {
 			} else {
 				// Page is not mapped, do load op.
 
-				do_load_op(desc_info, curr_frame, curr_page, data_offset - desc_info.offset);
+				do_load_op(desc_info, curr_page, curr_frame, desc_info.offset + data_offset);
 			}
 
 			// Set the dirty bit.
 			frames.ptrw()[curr_frame].dirty = true;
 
 			memcpy(
-				frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset),
-				(uint8_t *)data + data_offset,
-				CS_PAGE_SIZE - PARTIAL_SIZE(desc_info.offset)
-			);
+					frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset),
+					(uint8_t *)data + data_offset,
+					CS_PAGE_SIZE - PARTIAL_SIZE(desc_info.offset));
 			// Update offset with number of bytes read in first iteration.
 			data_offset += CS_PAGE_SIZE - PARTIAL_SIZE(desc_info.offset);
 		}
@@ -369,10 +389,13 @@ size_t PageTable::write(data_descriptor dd, void *data, size_t length) {
 			} else {
 				// Page is not mapped, do load op.
 
-				do_load_op(desc_info, curr_frame, curr_page, data_offset - desc_info.offset);
+				do_load_op(desc_info, curr_page, curr_frame, desc_info.offset + data_offset);
 			}
 
-			memcpy(frames[curr_frame].memory_region, (uint8_t *)data + data_offset, CS_PAGE_SIZE);
+			memcpy(
+					frames[curr_frame].memory_region,
+					(uint8_t *)data + data_offset,
+					CS_PAGE_SIZE);
 			data_offset += CS_PAGE_SIZE;
 		}
 
@@ -385,26 +408,28 @@ size_t PageTable::write(data_descriptor dd, void *data, size_t length) {
 			} else {
 				// Page is not mapped, do load op.
 
-				do_load_op(desc_info, curr_frame, curr_page, data_offset - desc_info.offset);
+				do_load_op(desc_info, curr_page, curr_frame, desc_info.offset + data_offset);
 			}
 
-			memcpy(frames[curr_frame].memory_region, (uint8_t *)data + data_offset, final_partial_length);
+			memcpy(
+					frames[curr_frame].memory_region,
+					(uint8_t *)data + data_offset,
+					final_partial_length);
 			data_offset += final_partial_length;
 		}
 
 		desc_info.offset += data_offset;
 
 		// Update descriptor info.
-		file_page_map.insert(dd, desc_info);
+		// file_page_map.insert(dd, desc_info);
 
 		return data_offset;
 	}
 }
 
-
 // The seek operation just uses the POSIX seek modes, which will probably get replaced later.
 size_t PageTable::seek(data_descriptor dd, size_t new_offset, int mode) {
-	Map<data_descriptor, DescriptorInfo>::Element *elem = file_page_map.find(dd);
+	Map<data_descriptor, DescriptorInfo *>::Element *elem = file_page_map.find(dd);
 
 	if (!elem) {
 
@@ -412,7 +437,7 @@ size_t PageTable::seek(data_descriptor dd, size_t new_offset, int mode) {
 
 	} else {
 
-		DescriptorInfo desc_info = elem->get();
+		DescriptorInfo &desc_info = *(elem->get());
 		size_t curr_offset = desc_info.offset;
 		size_t end_offset = desc_info.total_size;
 		size_t eff_offset = 0;
@@ -438,8 +463,8 @@ size_t PageTable::seek(data_descriptor dd, size_t new_offset, int mode) {
 			ERR_PRINT("Invalid offset.")
 			return CS_MEM_VAL_BAD;
 
-		// In this case, there can only be a hole and no data, so we only
-		// do a paging operation to represent it in memory, in case of a write.
+			// In this case, there can only be a hole and no data, so we only
+			// do a paging operation to represent it in memory, in case of a write.
 		} else if (eff_offset > end_offset) {
 
 			if ((curr_page = get_page_guid(desc_info, eff_offset, true)) != CS_MEM_VAL_BAD) {
@@ -449,7 +474,8 @@ size_t PageTable::seek(data_descriptor dd, size_t new_offset, int mode) {
 			} else {
 				// Page is not mapped and likely does not contain data, do paging op.
 
-				do_paging_op(desc_info, curr_frame, curr_page, eff_offset - curr_offset);
+				do_paging_op(desc_info, curr_page, curr_frame, eff_offset);
+				// do_paging_op(desc_info, curr_page, curr_frame, eff_offset - curr_offset);
 			}
 
 		} else {
@@ -460,15 +486,19 @@ size_t PageTable::seek(data_descriptor dd, size_t new_offset, int mode) {
 			} else {
 				// Page is not mapped but likely to contain data, do load op.
 
-				do_load_op(desc_info, curr_frame, curr_page, eff_offset - curr_offset);
+				do_load_op(desc_info, curr_page, curr_frame, eff_offset);
+				do_load_op(desc_info, curr_page, curr_frame, eff_offset + CS_PAGE_SIZE);
+				do_load_op(desc_info, curr_page, curr_frame, eff_offset + CS_PAGE_SIZE * 2);
+				do_load_op(desc_info, curr_page, curr_frame, eff_offset + CS_PAGE_SIZE * 3);
 			}
 		}
 
 		// Update the offset.
+
 		desc_info.offset = eff_offset;
 
 		// Update descriptor info.
-		file_page_map.insert(dd, desc_info);
+		// file_page_map.insert(dd, desc_info);
 
 		return curr_offset;
 	}
