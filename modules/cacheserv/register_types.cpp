@@ -11,6 +11,7 @@ void register_cacheserv_types() {
 	file_cache_server->init();
 	_file_cache_server = memnew(_FileCacheServer);
 	ClassDB::register_class<_FileCacheServer>();
+	ClassDB::register_class<_FileAccessCached>();
 	Engine::get_singleton()->add_singleton(Engine::Singleton("FileCacheServer", _FileCacheServer::get_singleton()));
 }
 

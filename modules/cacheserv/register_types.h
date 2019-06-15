@@ -31,7 +31,7 @@
 #ifndef REGISTER_CACHESERV_TYPES_H
 #define REGISTER_CACHESERV_TYPES_H
 
-#include "file_cache_server.h"
+#include "file_access_cached.h"
 
 void register_cacheserv_types();
 void unregister_cacheserv_types();
