@@ -43,7 +43,7 @@
 
 #include "cacheserv_defines.h"
 
-typedef int data_descriptor;
+typedef uint32_t data_descriptor;
 typedef uint32_t frame_id;
 typedef size_t page_id;
 
@@ -51,23 +51,42 @@ struct PageTable;
 struct Frame;
 struct DescriptorInfo;
 
+
+
 struct Frame {
 	uint8_t *memory_region;
 	uint16_t used_size;
 	bool recently_used;
 	bool used;
 	bool dirty;
+	volatile uint16_t rd_count;
+	volatile uint16_t wr_count;
 
-	Frame() {}
+	Frame() :
+		memory_region(),
+		used_size(0),
+		recently_used(false),
+		used(false),
+		dirty(false)
+		 {
+			 m = Mutex::create();
+		 }
 
-	Frame(
+	explicit Frame(
 			uint8_t *i_memory_region
 		) :
 
 			memory_region(i_memory_region),
+			used_size(0),
 			recently_used(false),
 			used(false),
-			dirty(false) {}
+			dirty(false)
+			{
+				m = Mutex::create();
+				m->unlock();
+			}
+
+	~Frame() { memdelete(m); }
 
 	Variant to_variant() const {
 		Dictionary a;
@@ -79,6 +98,15 @@ struct Frame {
 
 		return Variant(a);
 	}
+
+	// void lock() {
+	// 	atomic_increment(&lock);
+	// }
+
+	// void unlock() {
+	// 	if(lock > 0)
+	// 		atomic_decrement(&lock);
+	// }
 };
 
 struct DescriptorInfo {
@@ -88,40 +116,23 @@ struct DescriptorInfo {
 	Vector<page_id> pages;
 	FileAccess *internal_data_source;
 
-	DescriptorInfo(FileAccess *fa);
-	~DescriptorInfo();
+	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
+	explicit DescriptorInfo(FileAccess *fa, page_id new_range);
+	~DescriptorInfo() {};
 
-	Variant to_variant(PageTable p);
+	Variant to_variant(const PageTable &p);
 };
 
 
 struct PageTable {
+	Set<page_id> ranges = Set<size_t>();
+	Vector<page_id> pages;
 	Vector<Frame> frames;
 	Map<page_id, frame_id> page_frame_map;
-	Map<data_descriptor, DescriptorInfo *> file_page_map;
 	uint8_t *memory_region = NULL;
 	size_t available_space;
 	size_t used_space;
 	size_t total_space;
-	Mutex *m;
-
-	PageTable();
-	~PageTable();
-
-	data_descriptor get_new_data_descriptor();
-	data_descriptor add_data_source(FileAccess *data_source);
-	void remove_data_source(data_descriptor dd);
-
-	size_t read(data_descriptor dd, const void *buffer, size_t length);
-	size_t write(data_descriptor dd, const void *const data, size_t length);
-	size_t seek(data_descriptor dd, size_t new_offset, int mode);
-	size_t get_len(data_descriptor dd);
-	bool eof_reached(data_descriptor dd);
-
-	bool check_incomplete_nonfinal_page_load(DescriptorInfo &desc_info, page_id &curr_page, frame_id &curr_frame, size_t extra_offset);
-	void do_paging_op(DescriptorInfo &desc_info, page_id &curr_page, frame_id &curr_frame, size_t extra_offset = 0);
-	void do_load_op(DescriptorInfo &desc_info, page_id &curr_page, frame_id &curr_frame, size_t extra_offset = 0);
-
 };
 
 #endif // !PAGE_TABLE_H
