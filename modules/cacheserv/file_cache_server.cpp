@@ -1,13 +1,45 @@
-#include <unistd.h>
-#include <fcntl.h>
-#include <time.h>
-
-#include "drivers/unix/file_access_unix.h"
-#include "drivers/unix/mutex_posix.h"
+/*************************************************************************/
+/*  file_cache_server.cpp                                                */
+/*************************************************************************/
+/*                       This file is part of:                           */
+/*                           GODOT ENGINE                                */
+/*                      https://godotengine.org                          */
+/*************************************************************************/
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/*                                                                       */
+/* Permission is hereby granted, free of charge, to any person obtaining */
+/* a copy of this software and associated documentation files (the       */
+/* "Software"), to deal in the Software without restriction, including   */
+/* without limitation the rights to use, copy, modify, merge, publish,   */
+/* distribute, sublicense, and/or sell copies of the Software, and to    */
+/* permit persons to whom the Software is furnished to do so, subject to */
+/* the following conditions:                                             */
+/*                                                                       */
+/* The above copyright notice and this permission notice shall be        */
+/* included in all copies or substantial portions of the Software.       */
+/*                                                                       */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
+/*************************************************************************/
 
 #include "file_cache_server.h"
 #include "file_access_cached.h"
 
+#include "drivers/unix/file_access_unix.h"
+#include "drivers/unix/mutex_posix.h"
+
+#include <fcntl.h>
+#include <time.h>
+#include <unistd.h>
+
+static const bool CS_TRUE = true;
+static const bool CS_FALSE = true;
 
 FileCacheServer::FileCacheServer() {
 
@@ -26,24 +58,32 @@ FileCacheServer::FileCacheServer() {
 
 	for (size_t i = 0; i < CS_NUM_FRAMES; ++i) {
 		page_table.frames.push_back(
-				Frame(page_table.memory_region + i * CS_PAGE_SIZE));
+				memnew(Frame(page_table.memory_region + i * CS_PAGE_SIZE)));
 	}
 
 	singleton = this;
 }
 
 FileCacheServer::~FileCacheServer() {
-	if(page_table.memory_region) memdelete(page_table.memory_region);
+	if (page_table.memory_region) memdelete(page_table.memory_region);
 
-	if(files.size()) {
+	if (files.size()) {
 		const data_descriptor *key = NULL;
-		for(key = files.next(NULL); key; key = files.next(key)) {
+		for (key = files.next(NULL); key; key = files.next(key)) {
 			memdelete(files[*key]);
 		}
 	}
 
-	memdelete(this->mutex);
+	for(int i = 0; i < page_table.frames.size(); ++i) {
+		memdelete(page_table.frames[i]);
+	}
 
+	memdelete(this->mutex);
+	this->exit_thread = true;
+	Thread::wait_to_finish(this->thread);
+	Thread::wait_to_finish(this->th2);
+	memdelete(thread);
+	memdelete(th2);
 }
 
 data_descriptor FileCacheServer::add_data_source(RID *rid, FileAccess *data_source) {
@@ -51,7 +91,8 @@ data_descriptor FileCacheServer::add_data_source(RID *rid, FileAccess *data_sour
 	data_descriptor dd = rid->get_id();
 
 	size_t new_range;
-	while (page_table.ranges.has(new_range = (size_t)random() << 40)) ;
+	while (page_table.ranges.has(new_range = (size_t)random() << 40))
+		;
 
 	files[dd] = memnew(DescriptorInfo(data_source, new_range));
 	page_table.ranges.insert(new_range);
@@ -95,13 +136,13 @@ void FileCacheServer::do_paging_op(DescriptorInfo *desc_info, page_id curr_page,
 	*curr_frame = CS_MEM_VAL_BAD;
 	// Find a free frame.
 	for (int i = 0; i < CS_NUM_FRAMES; ++i) {
-		if (!page_table.frames[i].used) {
-			Frame &f = page_table.frames.ptrw()[i];
-			MutexLock m = MutexLock(f.m);
-				f.used = true;
-				f.recently_used = true;
-				*curr_frame = i;
-				break;
+		Frame::Write w(page_table.frames[i]);
+
+		if (!w.get_used()) {
+			w.set_used(true);
+			w.set_recently_used(true);
+			*curr_frame = i;
+			break;
 		}
 	}
 
@@ -113,44 +154,43 @@ void FileCacheServer::do_paging_op(DescriptorInfo *desc_info, page_id curr_page,
 		// Evict other page somehow...
 		// Remove prev page-frame mappings and associated pages.
 
-
 		page_id page_to_evict = CS_MEM_VAL_BAD;
 		frame_id frame_to_evict = CS_MEM_VAL_BAD;
-		do {
-			page_to_evict = random() % page_table.pages.size();
-			page_to_evict = page_table.pages[page_to_evict];
-			frame_id frame_to_evict = page_table.page_frame_map[page_to_evict];
 
-		} while(page_table.frames[frame_to_evict].m->try_lock() != OK);
-
-		page_table.frames[frame_to_evict].m->unlock();
+		{
+			Frame::Write w;
+			//TODO : change as per proper cache algo.
+			do {
+				page_to_evict = random() % page_table.pages.size();
+				page_to_evict = page_table.pages[page_to_evict];
+				frame_id frame_to_evict = page_table.page_frame_map[page_to_evict];
+				w = page_table.frames[frame_to_evict];
+			} while (!w.is_valid());
+		}
 
 		printf("Evicting page %lx mapped to frame %lx\n", page_to_evict, frame_to_evict);
 
-		Frame &f = page_table.frames.ptrw()[frame_to_evict];
-		if (f.dirty) {
+		Frame::Write w(page_table.frames[frame_to_evict]);
+		if (w.get_dirty()) {
 			enqueue_store(desc_info, CS_GET_FILE_OFFSET_FROM_GUID(curr_page));
 		}
 
-		MutexLock m = MutexLock(f.m);
 		// Reset flags.
-		f.dirty = false;
-		f.recently_used = false;
-		f.used = false;
+		w.set_dirty(false);
+		w.set_recently_used(false);
+		w.set_used(false);
 
 		// Erase old info.
 		page_table.page_frame_map.erase(page_to_evict);
 		page_table.pages.erase(page_to_evict);
 
-
 		// We reuse the frame we evicted.
 		*curr_frame = frame_to_evict;
 		printf("do_paging_op : curr_frame = %lx\n", curr_frame);
-		f.used = true;
-		f.recently_used = true;
+		w.set_used(true);
+		w.set_recently_used(true);
 	}
 }
-
 
 // !!! takes mutable references to all params.
 // Takes an extra_offset parameter that we use to keep track
@@ -176,7 +216,6 @@ void FileCacheServer::do_store_op(DescriptorInfo *desc_info, page_id curr_page, 
 	}
 }
 
-
 // !!! takes mutable references to all params.
 // The extra_offset param is used to track temporary changes to file offset.
 //
@@ -186,9 +225,10 @@ void FileCacheServer::do_store_op(DescriptorInfo *desc_info, page_id curr_page, 
 //
 // This operation updates the used_size value of the frame.
 _FORCE_INLINE_ bool FileCacheServer::check_incomplete_nonfinal_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t extra_offset) {
-	MutexLock lock = MutexLock(page_table.frames[curr_frame].m);
+	Frame::Write w(page_table.frames[curr_frame]);
 	desc_info->internal_data_source->seek(CS_GET_FILE_OFFSET_FROM_GUID(curr_page));
-	size_t used_size = page_table.frames.ptrw()[curr_frame].used_size = desc_info->internal_data_source->get_buffer(page_table.frames[curr_frame].memory_region, CS_PAGE_SIZE);
+	size_t used_size = desc_info->internal_data_source->get_buffer(w.ptr(), CS_PAGE_SIZE);
+	w.set_used_size(used_size);
 	return (used_size < CS_PAGE_SIZE) && (CS_GET_PAGE(desc_info->offset + extra_offset) < CS_GET_PAGE(desc_info->total_size));
 }
 
@@ -201,9 +241,9 @@ _FORCE_INLINE_ bool FileCacheServer::check_incomplete_nonfinal_page_load(Descrip
 //
 // This operation updates the used_size value of the frame.
 _FORCE_INLINE_ bool FileCacheServer::check_incomplete_nonfinal_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame) {
-	MutexLock lock = MutexLock(page_table.frames[curr_frame].m);
+	Frame::Read r(page_table.frames[curr_frame]);
 	desc_info->internal_data_source->seek(CS_GET_FILE_OFFSET_FROM_GUID(curr_page));
-	desc_info->internal_data_source->store_buffer(page_table.frames[curr_frame].memory_region, CS_PAGE_SIZE);
+	desc_info->internal_data_source->store_buffer(r.ptr(), CS_PAGE_SIZE);
 	return desc_info->internal_data_source->get_error() == ERR_FILE_CANT_WRITE && (CS_GET_PAGE(desc_info->offset) < CS_GET_PAGE(desc_info->total_size));
 }
 
@@ -233,7 +273,7 @@ size_t FileCacheServer::read(const RID *const rid, void *const buffer, size_t le
 			ERR_FAIL_COND_V((curr_frame = page_table.page_frame_map[curr_page]) != CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 
 			// Lock the frame for the operation.
-			MutexLock m = MutexLock(page_table.frames[curr_frame].m);
+			Frame::Read r(page_table.frames[curr_frame]);
 
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset)
 			//  gives us the address of the first byte to copy which may or may not be on a page boundary.
@@ -242,7 +282,7 @@ size_t FileCacheServer::read(const RID *const rid, void *const buffer, size_t le
 			//  of bytes from the current offset to the end of the page.
 			memcpy(
 					(uint8_t *)buffer + buffer_offset,
-					page_table.frames[curr_frame].memory_region + CS_PARTIAL_SIZE(desc_info.offset),
+					r.ptr() + CS_PARTIAL_SIZE(desc_info.offset),
 					CS_PAGE_SIZE - CS_PARTIAL_SIZE(desc_info.offset));
 
 			buffer_offset += CS_PAGE_SIZE - CS_PARTIAL_SIZE(desc_info.offset);
@@ -255,12 +295,12 @@ size_t FileCacheServer::read(const RID *const rid, void *const buffer, size_t le
 			ERR_FAIL_COND_V((curr_frame = page_table.page_frame_map[curr_page]) != CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 
 			// Lock current frame.
-			MutexLock m = MutexLock(page_table.frames[curr_frame].m);
+			Frame::Read r(page_table.frames[curr_frame]);
 
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset) gives us the start
 			memcpy(
 					(uint8_t *)buffer + buffer_offset,
-					page_table.frames[curr_frame].memory_region,
+					r.ptr(),
 					CS_PAGE_SIZE);
 
 			buffer_offset += CS_PAGE_SIZE;
@@ -272,9 +312,12 @@ size_t FileCacheServer::read(const RID *const rid, void *const buffer, size_t le
 			ERR_FAIL_COND_V(curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true) != CS_MEM_VAL_BAD, CS_MEM_VAL_BAD)
 			ERR_FAIL_COND_V((curr_frame = page_table.page_frame_map[curr_page]) != CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 
-			MutexLock m = MutexLock(page_table.frames[curr_frame].m);
+			Frame::Read r(page_table.frames[curr_frame]);
 
-			memcpy((uint8_t *)buffer + buffer_offset, page_table.frames[curr_frame].memory_region, final_partial_length);
+			memcpy(
+					(uint8_t *)buffer + buffer_offset,
+					r.ptr(),
+					final_partial_length);
 			buffer_offset += final_partial_length;
 		}
 
@@ -313,13 +356,13 @@ size_t FileCacheServer::write(const RID *const rid, const void *const data, size
 			ERR_FAIL_COND_V((curr_frame = page_table.page_frame_map[curr_page]) != CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 
 			// Lock the frame for the operation.
-			MutexLock m = MutexLock(page_table.frames[curr_frame].m);
+			Frame::Write w(page_table.frames[curr_frame]);
 
 			// Set the dirty bit.
-			page_table.frames.ptrw()[curr_frame].dirty = true;
+			w.set_dirty(true);
 
 			memcpy(
-					page_table.frames[curr_frame].memory_region + CS_PARTIAL_SIZE(desc_info.offset),
+					w.ptr() + CS_PARTIAL_SIZE(desc_info.offset),
 					(uint8_t *)data + data_offset,
 					CS_PAGE_SIZE - CS_PARTIAL_SIZE(desc_info.offset));
 			// Update offset with number of bytes read in first iteration.
@@ -334,10 +377,13 @@ size_t FileCacheServer::write(const RID *const rid, const void *const data, size
 			ERR_FAIL_COND_V((curr_frame = page_table.page_frame_map[curr_page]) != CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 
 			// Lock the frame for the operation.
-			MutexLock m = MutexLock(page_table.frames[curr_frame].m);
+			Frame::Write w(page_table.frames[curr_frame]);
+
+			// Set the dirty bit.
+			w.set_dirty(true);
 
 			memcpy(
-					page_table.frames[curr_frame].memory_region,
+					w.ptr(),
 					(uint8_t *)data + data_offset,
 					CS_PAGE_SIZE);
 			data_offset += CS_PAGE_SIZE;
@@ -352,10 +398,13 @@ size_t FileCacheServer::write(const RID *const rid, const void *const data, size
 			ERR_FAIL_COND_V((curr_frame = page_table.page_frame_map[curr_page]) != CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 
 			// Lock the frame for the operation.
-			MutexLock m = MutexLock(page_table.frames[curr_frame].m);
+			Frame::Write w(page_table.frames[curr_frame]);
+
+			// Set the dirty bit.
+			w.set_dirty(true);
 
 			memcpy(
-					page_table.frames[curr_frame].memory_region,
+					w.ptr(),
 					(uint8_t *)data + data_offset,
 					final_partial_length);
 			data_offset += final_partial_length;
@@ -406,15 +455,15 @@ size_t FileCacheServer::seek(const RID *const rid, size_t new_offset, int mode) 
 			ERR_PRINT("Invalid offset.")
 			return CS_MEM_VAL_BAD;
 
-		// In this case, there can only be a hole and no data, so we only
-		// do a paging operation to represent it in memory, in case of a write.
+			// In this case, there can only be a hole and no data, so we only
+			// do a paging operation to represent it in memory, in case of a write.
 		} else if (eff_offset > end_offset) {
-			for(int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
+			for (int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
 				check_with_page_op(desc_info, eff_offset + i * CS_PAGE_SIZE);
 			}
 
 		} else {
-			for(int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
+			for (int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
 				check_with_page_op_and_update(desc_info, &curr_page, &curr_frame, eff_offset + i * CS_PAGE_SIZE);
 				enqueue_load(desc_info, curr_page);
 			}
@@ -434,7 +483,7 @@ size_t FileCacheServer::seek(const RID *const rid, size_t new_offset, int mode) 
 size_t FileCacheServer::get_len(const RID *const rid) const {
 	data_descriptor dd = rid->get_id();
 	size_t size = files[dd]->internal_data_source->get_len();
-	if(size > files[dd]->total_size) {
+	if (size > files[dd]->total_size) {
 		files[dd]->total_size = size;
 	}
 
@@ -446,7 +495,6 @@ bool FileCacheServer::file_exists(const String &p_name) const {
 	bool exists = f->file_exists(p_name);
 	memdelete(f);
 	return exists;
-
 }
 
 bool FileCacheServer::eof_reached(const RID *const rid) const {
@@ -475,7 +523,6 @@ bool FileCacheServer::check_with_page_op(DescriptorInfo *desc_info, size_t offse
 	return true;
 }
 
-
 bool FileCacheServer::check_with_page_op_and_update(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame, size_t offset) {
 
 	if (get_page_guid(*desc_info, offset, true) == CS_MEM_VAL_BAD) {
@@ -491,9 +538,9 @@ bool FileCacheServer::check_with_page_op_and_update(DescriptorInfo *desc_info, p
 
 		page_table.page_frame_map.insert(cp, cf);
 
-		if(curr_frame)
+		if (curr_frame)
 			*curr_frame = cf;
-		if(curr_page)
+		if (curr_page)
 			*curr_page = cp;
 
 		return false;
@@ -530,8 +577,6 @@ void FileCacheServer::lock() {
 	mutex->lock();
 }
 
-
-
 Error FileCacheServer::init() {
 	exit_thread = false;
 	thread = Thread::create(FileCacheServer::thread_func, this);
@@ -545,7 +590,6 @@ Error FileCacheServer::init() {
 // 	for(auto i = p.page_frame_map.front(); i; i = i->next()) \
 // 		printf("%lx : %lx\n", i->key(), i->value()); \
 // 	printf("\n\n");
-
 
 void FileCacheServer::thread_func(void *p_udata) {
 	srandom(time(0));
@@ -567,22 +611,24 @@ void FileCacheServer::thread_func(void *p_udata) {
 	// f = (FileAccessUnix *)f->open(String("nbig.txt"), FileAccess::READ_WRITE);
 	// memdelete(g);
 
-	while(!fcs.exit_thread) {
+	while (!fcs.exit_thread) {
 
+		WARN_PRINT("Waiting for message.");
 		CtrlOp l = fcs.op_queue.pop();
-		printf("got message\n");
+		WARN_PRINT("got message");
 		ERR_CONTINUE(l.di == NULL);
 
 		page_id curr_page = CS_GET_PAGE(l.offset);
 		frame_id curr_frame = fcs.page_table.page_frame_map[CS_GET_PAGE(l.offset)];
-		MutexLock frame_lock = MutexLock(fcs.page_table.frames[curr_frame].m);
 
 		switch (l.type) {
 			case CtrlOp::LOAD: {
+				WARN_PRINT("Performing load.");
 				fcs.do_load_op(l.di, curr_page, curr_frame);
 				break;
 			}
 			case CtrlOp::STORE: {
+				WARN_PRINT("Performing store.");
 				fcs.do_store_op(l.di, curr_page, curr_frame);
 				break;
 			}
@@ -592,24 +638,24 @@ void FileCacheServer::thread_func(void *p_udata) {
 }
 
 void FileCacheServer::th2_fn(void *p_udata) {
-		sleep(2);
+	sleep(2);
 
-		FileCacheServer &fcs = *static_cast<FileCacheServer *>(p_udata);
+	FileCacheServer &fcs = *static_cast<FileCacheServer *>(p_udata);
 
-		FileAccessCached *fac = memnew(FileAccessCached);
-		fac->_open("/home/warpspeedscp/godot/big.txt", FileAccess::READ);
+	FileAccessCached *fac = memnew(FileAccessCached);
+	fac->_open("/home/warpspeedscp/godot/big.txt", FileAccess::READ);
 
-		while (!fcs.exit_thread);
+	while (!fcs.exit_thread)
+		;
 
-		fac->close();
-	}
+	fac->close();
+}
 
 void FileCacheServer::check_cache(const RID *const rid, size_t length) {
 	DescriptorInfo *desc_info = files[rid->get_id()];
 
-
-	for(int i = 0; i < CS_GET_PAGED_LENGTH(length); ++i) {
-		if(!check_with_page_op(desc_info, desc_info->offset + i * CS_PAGE_SIZE)) {
+	for (int i = 0; i < CS_GET_PAGED_LENGTH(length); ++i) {
+		if (!check_with_page_op(desc_info, desc_info->offset + i * CS_PAGE_SIZE)) {
 			enqueue_load(desc_info, desc_info->offset + i * CS_PAGE_SIZE);
 		}
 	}

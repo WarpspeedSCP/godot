@@ -15,7 +15,7 @@ Variant DescriptorInfo::to_variant(const PageTable &p) {
 	Array d;
 
 	for(int i = 0; i < pages.size(); ++i) {
-		d.push_back(p.frames[p.page_frame_map[pages[i]]].to_variant());
+		d.push_back(p.frames[p.page_frame_map[pages[i]]]->to_variant());
 	}
 
 	Dictionary out;

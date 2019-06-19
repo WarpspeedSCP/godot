@@ -191,6 +191,7 @@ public:
 		handle_owner.free(rid);
 		memfree(rid.get_data());
 	}
+
 	// Expects that the page at the given offset is in the cache.
 	void enqueue_load(DescriptorInfo *desc_info, size_t offset) {
 		op_queue.push(CtrlOp(desc_info, offset, CtrlOp::LOAD));

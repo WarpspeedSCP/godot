@@ -138,7 +138,7 @@ public:
 
 	FileAccessCached() {
 
-		server = static_cast<_FileCacheServer *>(Engine::get_singleton()->get_singleton_object("FileCacheServer"))->get_sss();
+		server = dynamic_cast<_FileCacheServer *>(Engine::get_singleton()->get_singleton_object("FileCacheServer"))->get_sss();
 		ERR_FAIL_COND(!server);
 		sem = Semaphore::create();
 		ERR_FAIL_COND(!sem);

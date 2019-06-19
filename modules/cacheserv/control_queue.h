@@ -12,20 +12,6 @@
 
 class CachedResourceHandle : public RID_Data {};
 
-	// union {
-
-	// 	struct {
-	// 		size_t in_size;
-	// 		size_t *out_size;
-	// 	} rw_data;
-
-	// 	struct {
-	// 		off64_t seek_offset;
-	// 		char seek_arg;
-	// 	} seek_data;
-
-	// } extra;
-
 class CtrlOp {
 public:
 
@@ -40,7 +26,6 @@ public:
 
 
 	CtrlOp() : di(NULL), offset(CS_MEM_VAL_BAD), type(CS_MEM_VAL_BAD) {}
-	virtual ~CtrlOp() {}
 
 	CtrlOp(DescriptorInfo *i_di, size_t i_offset, uint8_t i_type) : di(i_di), offset(i_offset), type(i_type) {}
 };
@@ -56,8 +41,19 @@ private:
 
 	CtrlOp pop() {
 
-		if(queue.empty()) {
+		while(queue.empty()) {
 			sem->wait();
+		}
+
+		CtrlOp l = queue.front()->get();
+		queue.pop_front();
+
+		return l;
+	}
+
+	CtrlOp try_pop() {
+		if(queue.empty()) {
+			return CtrlOp();
 		}
 
 		CtrlOp l = queue.front()->get();
