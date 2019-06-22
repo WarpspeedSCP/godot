@@ -1,5 +1,5 @@
 /*************************************************************************/
-/*  page_table.h                                                          */
+/*  cache_info_table.h                                                   */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
@@ -28,8 +28,8 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef PAGE_TABLE_H
-#define PAGE_TABLE_H
+#ifndef CACHE_INFO_TABLE_H
+#define CACHE_INFO_TABLE_H
 
 #include "core/map.h"
 #include "core/object.h"
@@ -46,26 +46,24 @@
 #include "cacheserv_defines.h"
 
 typedef uint32_t data_descriptor;
-typedef uint32_t frame_id;
-typedef size_t page_id;
+typedef uint32_t part_holder_id;
+typedef size_t part_id;
 
-struct PageTable;
-struct Frame;
+struct CacheInfoTable;
+struct PartHolder;
 struct DescriptorInfo;
 
-struct Frame {
+struct PartHolder {
 private:
 	uint16_t used_size;
 	uint8_t *const memory_region;
 	bool dirty;
 	bool recently_used;
 	bool used;
-	// volatile uint16_t rd_count; // Number of readers.
-	// volatile uint8_t wr_lock; // When a write lock on this frame is acquired, this
 	RWLock *rwl;
 
 public:
-	Frame() :
+	PartHolder() :
 			memory_region(NULL),
 			used_size(0),
 			recently_used(false),
@@ -76,7 +74,7 @@ public:
 	// wr_lock(0)
 	{}
 
-	explicit Frame(
+	explicit PartHolder(
 			uint8_t *i_memory_region) :
 
 			memory_region(i_memory_region),
@@ -91,7 +89,9 @@ public:
 
 	Variant to_variant() const {
 		Dictionary a;
-		a["memory_region"] = Variant(String((char *)memory_region));
+		String s = String((char *)memory_region);
+		s.resize(100);
+		a["memory_region"] = Variant(" ... " + s + " ... ");
 		a["used_size"] = Variant((int)used_size);
 		a["recently_used"] = Variant(recently_used);
 		a["used"] = Variant(used);
@@ -100,11 +100,11 @@ public:
 		return Variant(a);
 	}
 
-	~Frame() { memdelete(rwl); }
+	~PartHolder() { memdelete(rwl); }
 
 	class Read {
 	private:
-		const Frame *alloc;
+		const PartHolder *alloc;
 		RWLock *rwl;
 		const uint8_t *mem;
 		Error valid;
@@ -147,16 +147,18 @@ public:
 
 			rwl = other.rwl;
 
-			WARN_PRINT("Trying lock.");
+			// WARN_PRINT("Trying lock.");
 			valid = rwl->read_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
+			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
 
+			acquire();
 			mem = other.mem;
+			alloc = other.alloc;
 
 			return *this;
 		}
 
-		Read &operator=(const Frame *const frame) {
+		Read &operator=(const PartHolder *const frame) {
 			if (rwl == frame->rwl)
 				return *this;
 
@@ -164,11 +166,13 @@ public:
 
 			rwl = frame->rwl;
 
-			WARN_PRINT("Trying lock.");
+			// WARN_PRINT("Trying lock.");
 			valid = rwl->read_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
+			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
 
+			acquire();
 			mem = frame->memory_region;
+			alloc = frame;
 
 			return *this;
 		}
@@ -178,21 +182,26 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		explicit Read(const Frame *alloc) :
+		explicit Read(const PartHolder *alloc) :
 				alloc(alloc),
 				rwl(alloc->rwl),
 				mem(alloc->memory_region) {
 			valid = rwl->read_try_lock();
+			acquire();
 		}
 
 		explicit Read(const Read &other) :
+				alloc(other.alloc),
 				rwl(other.rwl),
-				mem(other.mem) { valid = rwl->read_try_lock(); }
+				mem(other.mem) {
+			valid = rwl->read_try_lock();
+			acquire();
+		}
 
 		~Read() {
 			if (rwl) {
 				rwl->read_unlock();
-				WARN_PRINT("Released lock.");
+				// WARN_PRINT("Released lock.");
 			}
 
 		}
@@ -200,7 +209,7 @@ public:
 
 	class Write {
 	private:
-		Frame *alloc;
+		PartHolder *alloc;
 		RWLock *rwl;
 		uint8_t *mem;
 		Error valid;
@@ -251,7 +260,7 @@ public:
 			}
 		}
 
-		Frame *operator->() {
+		PartHolder *operator->() {
 			return alloc;
 		}
 
@@ -263,16 +272,17 @@ public:
 
 			rwl = p_read.rwl;
 
-			WARN_PRINT("Trying lock.");
+			// WARN_PRINT("Trying lock.");
 			valid = rwl->write_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
+			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
 
+			acquire();
 			mem = p_read.mem;
 
 			return *this;
 		}
 
-		Write &operator=(Frame *const p_read) {
+		Write &operator=(PartHolder *const p_read) {
 			if (rwl == p_read->rwl)
 				return *this;
 
@@ -280,10 +290,11 @@ public:
 
 			rwl = p_read->rwl;
 
-			WARN_PRINT("Trying lock.");
+			// WARN_PRINT("Trying lock.");
 			valid = rwl->write_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
+			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
 
+			acquire();
 			mem = p_read->memory_region;
 
 			alloc = p_read;
@@ -296,24 +307,29 @@ public:
 				mem(NULL),
 				valid(ERR_LOCKED) {}
 
-		explicit Write(Frame *const p_alloc) :
+		explicit Write(PartHolder *const p_alloc) :
 				alloc(p_alloc),
 				rwl(p_alloc->rwl),
 				mem(p_alloc->memory_region) {
-			WARN_PRINT("Trying lock.");
+			// WARN_PRINT("Trying lock.");
 			valid = rwl->write_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
+			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
+
+			acquire();
 		}
 
 		explicit Write(Write &other) :
 				alloc(other.alloc),
 				rwl(other.rwl),
-				mem(other.mem) { valid = rwl->write_try_lock(); }
+				mem(other.mem) {
+			valid = rwl->write_try_lock();
+			acquire();
+		}
 
 		~Write() {
 			if (rwl) {
 				rwl->write_unlock();
-				WARN_PRINT("Released lock.");
+				// WARN_PRINT("Released lock.");
 			}
 		}
 	};
@@ -322,26 +338,26 @@ public:
 struct DescriptorInfo {
 	size_t offset;
 	size_t total_size;
-	size_t range_offset;
-	Vector<page_id> pages;
+	size_t guid_prefix;
+	Vector<part_id> parts;
 	FileAccess *internal_data_source;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
-	explicit DescriptorInfo(FileAccess *fa, page_id new_range);
+	explicit DescriptorInfo(FileAccess *fa, part_id new_guid_prefix);
 	~DescriptorInfo(){};
 
-	Variant to_variant(const PageTable &p);
+	Variant to_variant(const CacheInfoTable &p);
 };
 
-struct PageTable {
-	Set<page_id> ranges = Set<size_t>();
-	Vector<page_id> pages;
-	Vector<Frame *> frames;
-	Map<page_id, frame_id> page_frame_map;
+struct CacheInfoTable {
+	Set<part_id> guid_prefixes = Set<part_id>();
+	Vector<part_id> parts;
+	Vector<PartHolder *> part_holders;
+	Map<part_id, part_holder_id> page_frame_map;
 	uint8_t *memory_region = NULL;
 	size_t available_space;
 	size_t used_space;
 	size_t total_space;
 };
 
-#endif // !PAGE_TABLE_H
+#endif // !CACHE_INFO_TABLE_H
