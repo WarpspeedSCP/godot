@@ -15,7 +15,8 @@ class CachedResourceHandle : public RID_Data {};
 struct CtrlOp {
 	enum Op {
 		LOAD,
-		STORE
+		STORE,
+		QUIT
 	};
 
 	DescriptorInfo *di;
@@ -23,7 +24,7 @@ struct CtrlOp {
 	uint8_t type;
 
 
-	CtrlOp() : di(NULL), offset(CS_MEM_VAL_BAD), type(CS_MEM_VAL_BAD) {}
+	CtrlOp() : di(NULL), offset(CS_MEM_VAL_BAD), type(QUIT) {}
 
 	CtrlOp(DescriptorInfo *i_di, size_t i_offset, uint8_t i_type) : di(i_di), offset(i_offset), type(i_type) {}
 };

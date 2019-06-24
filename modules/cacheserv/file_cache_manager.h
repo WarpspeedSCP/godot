@@ -95,11 +95,11 @@ private:
 	data_descriptor add_data_source(RID *rid, FileAccess *data_source);
 	void remove_data_source(data_descriptor dd);
 
-	bool check_incomplete_nonfinal_page_load(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t extra_offset);
-	bool check_incomplete_nonfinal_page_store(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder);
-	void do_load_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t extra_offset = 0);
-	void do_paging_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id *curr_part_holder, size_t extra_offset = 0);
-	void do_store_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder);
+	bool check_incomplete_page_load(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset);
+	bool check_incomplete_page_store(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset);
+	void do_load_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset);
+	void do_paging_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id *curr_part_holder, size_t offset = 0UL);
+	void do_store_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset);
 
 	// Returns true if the page at the current offset is already tracked.
 	// Adds the current page to the tracked list, maps it to a frame and returns false if not.
@@ -220,7 +220,6 @@ class _FileCacheManager : public Object {
 protected:
 	static void _bind_methods() {
 		ClassDB::bind_method(D_METHOD("get_state"), &_FileCacheManager::get_state);
-		ClassDB::bind_method(D_METHOD("quit"), &_FileCacheManager::quit);
 	}
 
 
@@ -229,11 +228,6 @@ public:
 	static FileCacheManager *get_sss() { return FileCacheManager::get_singleton(); }
 	static _FileCacheManager *get_singleton();
 	Variant get_state() { return FileCacheManager::get_singleton()->_get_state(); }
-	void quit() {
-		FileCacheManager::get_singleton()->exit_thread = true;
-		FileCacheManager::get_singleton()->op_queue.sig_quit = true;
-		FileCacheManager::get_singleton()->op_queue.push(CtrlOp());
-	}
 };
 
 #endif // !FILE_CACHE_MANAGER_H

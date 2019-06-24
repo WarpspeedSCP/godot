@@ -34,7 +34,7 @@
 #include "core/map.h"
 #include "core/object.h"
 #include "core/os/file_access.h"
-#include "core/os/mutex.h"
+#include "core/os/semaphore.h"
 #include "core/os/rw_lock.h"
 #include "core/os/thread.h"
 #include "core/reference.h"
@@ -53,23 +53,32 @@ struct CacheInfoTable;
 struct PartHolder;
 struct DescriptorInfo;
 
+class FileCacheManager;
+
 struct PartHolder {
+	friend class FileCacheManager;
+
 private:
 	uint16_t used_size;
 	uint8_t *const memory_region;
 	bool dirty;
 	bool recently_used;
-	bool used;
-	RWLock *rwl;
+	RWLock *meta_lock;
+	RWLock *data_lock;
+	volatile bool ready;
+	Semaphore *ready_sem;
 
 public:
+	volatile bool used;
 	PartHolder() :
 			memory_region(NULL),
 			used_size(0),
 			recently_used(false),
 			used(false),
 			dirty(false),
-			rwl(NULL)
+			ready(false),
+			meta_lock(NULL),
+			data_lock(NULL)
 	// rd_count(0),
 	// wr_lock(0)
 	{}
@@ -82,10 +91,19 @@ public:
 			recently_used(false),
 			used(false),
 			dirty(false),
-			rwl(RWLock::create())
+			ready(false),
+			ready_sem(Semaphore::create()),
+			meta_lock(RWLock::create()),
+			data_lock(RWLock::create())
 	// rd_count(0),
 	// wr_lock(0)
 	{}
+
+	~PartHolder() {
+		memdelete(meta_lock);
+		memdelete(data_lock);
+		memdelete(ready_sem);
+	}
 
 	Variant to_variant() const {
 		Dictionary a;
@@ -100,236 +118,201 @@ public:
 		return Variant(a);
 	}
 
-	~PartHolder() { memdelete(rwl); }
 
-	class Read {
+	class MetaRead {
 	private:
 		const PartHolder *alloc;
 		RWLock *rwl;
+
+	public:
+		_FORCE_INLINE_ uint16_t get_used_size() {
+			return alloc->used_size;
+		}
+
+		_FORCE_INLINE_ bool get_dirty() {
+			return alloc->dirty;
+		}
+
+		_FORCE_INLINE_ bool get_used() {
+			return alloc->used;
+		}
+
+		_FORCE_INLINE_ bool get_recently_used() {
+			return alloc->recently_used;
+		}
+
+		_FORCE_INLINE_ bool get_ready() {
+			return alloc->ready;
+		}
+
+		void acquire() {
+			WARN_PRINT(("Acquiring metadata READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			rwl->read_lock();
+		}
+
+		MetaRead() :
+				alloc(NULL),
+				rwl(NULL) {}
+
+		explicit MetaRead(const PartHolder *alloc) :
+				alloc(alloc),
+				rwl(alloc->meta_lock) {
+			acquire();
+		}
+
+		~MetaRead() {
+			if (rwl) {
+				rwl->read_unlock();
+				WARN_PRINT(("Released metadata READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			}
+		}
+	};
+
+	class DataRead {
+	private:
+		RWLock *rwl;
 		const uint8_t *mem;
-		Error valid;
 
 	public:
 		_FORCE_INLINE_ const uint8_t &operator[](int p_index) const { return mem[p_index]; }
 		_FORCE_INLINE_ const uint8_t *ptr() const { return mem; }
 
-		_FORCE_INLINE_ uint16_t get_used_size() {
-			return alloc->used_size;
-		}
-
-		_FORCE_INLINE_ bool get_dirty() {
-			return alloc->dirty;
-		}
-
-		_FORCE_INLINE_ bool get_used() {
-			return alloc->used;
-		}
-
-		_FORCE_INLINE_ bool get_recently_used() {
-			return alloc->recently_used;
-		}
-
-		bool is_valid() { return valid == OK; }
-
 		void acquire() {
-			if (valid != OK) {
-				WARN_PRINT("Acquiring lock.");
-				rwl->read_lock();
-				valid = OK;
-			}
+			rwl->read_lock();
 		}
 
-		Read &operator=(const Read &other) {
-			if (rwl == other.rwl)
-				return *this;
-
-			rwl->read_unlock();
-
-			rwl = other.rwl;
-
-			// WARN_PRINT("Trying lock.");
-			valid = rwl->read_try_lock();
-			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
-			acquire();
-			mem = other.mem;
-			alloc = other.alloc;
-
-			return *this;
-		}
-
-		Read &operator=(const PartHolder *const frame) {
-			if (rwl == frame->rwl)
-				return *this;
-
-			rwl->read_unlock();
-
-			rwl = frame->rwl;
-
-			// WARN_PRINT("Trying lock.");
-			valid = rwl->read_try_lock();
-			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
-			acquire();
-			mem = frame->memory_region;
-			alloc = frame;
-
-			return *this;
-		}
-
-		Read() :
-				alloc(NULL),
+		DataRead() :
 				rwl(NULL),
 				mem(NULL) {}
 
-		explicit Read(const PartHolder *alloc) :
-				alloc(alloc),
-				rwl(alloc->rwl),
+		explicit DataRead(const PartHolder *alloc) :
+				rwl(alloc->data_lock),
 				mem(alloc->memory_region) {
-			valid = rwl->read_try_lock();
+			while (!(alloc->ready)) alloc->ready_sem->wait();
+			WARN_PRINT(("Acquiring data READ lock in thread ID "  + itos(Thread::get_caller_id()) ).utf8().get_data());
 			acquire();
 		}
 
-		explicit Read(const Read &other) :
-				alloc(other.alloc),
-				rwl(other.rwl),
-				mem(other.mem) {
-			valid = rwl->read_try_lock();
-			acquire();
-		}
-
-		~Read() {
+		~DataRead() {
 			if (rwl) {
 				rwl->read_unlock();
-				// WARN_PRINT("Released lock.");
+				WARN_PRINT(("Releasing data READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
 			}
-
 		}
 	};
 
-	class Write {
+	class MetaWrite {
 	private:
 		PartHolder *alloc;
 		RWLock *rwl;
-		uint8_t *mem;
-		Error valid;
 
 	public:
-		_FORCE_INLINE_ uint8_t &operator[](int p_index) const { return mem[p_index]; }
-		_FORCE_INLINE_ uint8_t *ptr() const { return mem; }
-
 		_FORCE_INLINE_ uint16_t get_used_size() {
 			return alloc->used_size;
 		}
 
-		_FORCE_INLINE_ void set_used_size(uint16_t in) {
+		_FORCE_INLINE_ MetaWrite &set_used_size(uint16_t in) {
 			alloc->used_size = in;
+			return *this;
 		}
 
 		_FORCE_INLINE_ bool get_dirty() {
 			return alloc->dirty;
 		}
 
-		_FORCE_INLINE_ void set_dirty(bool in) {
+		_FORCE_INLINE_ MetaWrite &set_dirty(bool in) {
 			alloc->dirty = in;
+			return *this;
 		}
 
 		_FORCE_INLINE_ bool get_used() {
 			return alloc->used;
 		}
 
-		_FORCE_INLINE_ void set_used(bool in) {
+		_FORCE_INLINE_ MetaWrite &set_used(bool in) {
 			alloc->used = in;
+			return *this;
+		}
+
+		_FORCE_INLINE_ bool get_ready() {
+			return alloc->ready;
+		}
+
+		_FORCE_INLINE_ MetaWrite &set_ready(bool in) {
+			alloc->ready = in;
+
+			if (in) {
+				WARN_PRINT("Part ready.");
+				alloc->ready_sem->post();
+			}
+
+			return *this;
 		}
 
 		_FORCE_INLINE_ bool get_recently_used() {
 			return alloc->recently_used;
 		}
 
-		_FORCE_INLINE_ void set_recently_used(bool in) {
+		_FORCE_INLINE_ MetaWrite &set_recently_used(bool in) {
 			alloc->recently_used = in;
+			return *this;
 		}
 
-		bool is_valid() { return valid == OK; }
-
 		void acquire() {
-			if (valid != OK) {
-				WARN_PRINT("Acquiring lock.");
-				rwl->write_lock();
-				valid = OK;
-			}
+			WARN_PRINT(("Acquiring metadata WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			rwl->write_lock();
 		}
 
 		PartHolder *operator->() {
 			return alloc;
 		}
 
-		Write &operator=(const Write &p_read) {
-			if (rwl == p_read.rwl)
-				return *this;
+		MetaWrite() :
+				alloc(NULL),
+				rwl(NULL) {}
 
-			rwl->write_unlock();
-
-			rwl = p_read.rwl;
-
-			// WARN_PRINT("Trying lock.");
-			valid = rwl->write_try_lock();
-			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
-			acquire();
-			mem = p_read.mem;
-
-			return *this;
-		}
-
-		Write &operator=(PartHolder *const p_read) {
-			if (rwl == p_read->rwl)
-				return *this;
-
-			rwl->write_unlock();
-
-			rwl = p_read->rwl;
-
-			// WARN_PRINT("Trying lock.");
-			valid = rwl->write_try_lock();
-			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
-			acquire();
-			mem = p_read->memory_region;
-
-			alloc = p_read;
-
-			return *this;
-		}
-
-		Write() :
-				rwl(NULL),
-				mem(NULL),
-				valid(ERR_LOCKED) {}
-
-		explicit Write(PartHolder *const p_alloc) :
-				alloc(p_alloc),
-				rwl(p_alloc->rwl),
-				mem(p_alloc->memory_region) {
-			// WARN_PRINT("Trying lock.");
-			valid = rwl->write_try_lock();
-			// WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
+		explicit MetaWrite(PartHolder *const alloc) :
+				alloc(alloc),
+				rwl(alloc->meta_lock) {
 			acquire();
 		}
 
-		explicit Write(Write &other) :
-				alloc(other.alloc),
-				rwl(other.rwl),
-				mem(other.mem) {
-			valid = rwl->write_try_lock();
-			acquire();
-		}
-
-		~Write() {
+		~MetaWrite() {
 			if (rwl) {
 				rwl->write_unlock();
-				// WARN_PRINT("Released lock.");
+				WARN_PRINT(("Releasing metadata WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			}
+		}
+	};
+
+	class DataWrite {
+	private:
+		RWLock *rwl;
+		uint8_t *mem;
+
+	public:
+		_FORCE_INLINE_ uint8_t &operator[](int p_index) const { return mem[p_index]; }
+		_FORCE_INLINE_ uint8_t *ptr() const { return mem; }
+
+		void acquire() {
+			WARN_PRINT(("Acquiring data WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			rwl->write_lock();
+		}
+
+		DataWrite() :
+				rwl(NULL),
+				mem(NULL) {}
+
+		explicit DataWrite(PartHolder *const p_alloc) :
+				rwl(p_alloc->data_lock),
+				mem(p_alloc->memory_region) {
+			acquire();
+		}
+
+		~DataWrite() {
+			if (rwl) {
+				rwl->write_unlock();
+				WARN_PRINT(("Releasing data WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -344,7 +327,7 @@ struct DescriptorInfo {
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
 	explicit DescriptorInfo(FileAccess *fa, part_id new_guid_prefix);
-	~DescriptorInfo(){};
+	~DescriptorInfo() {}
 
 	Variant to_variant(const CacheInfoTable &p);
 };
@@ -353,7 +336,7 @@ struct CacheInfoTable {
 	Set<part_id> guid_prefixes = Set<part_id>();
 	Vector<part_id> parts;
 	Vector<PartHolder *> part_holders;
-	Map<part_id, part_holder_id> page_frame_map;
+	Map<part_id, part_holder_id> part_holder_map;
 	uint8_t *memory_region = NULL;
 	size_t available_space;
 	size_t used_space;

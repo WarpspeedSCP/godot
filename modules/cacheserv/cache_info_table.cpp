@@ -15,7 +15,7 @@ Variant DescriptorInfo::to_variant(const CacheInfoTable &p) {
 	Array d;
 
 	for(int i = 0; i < parts.size(); ++i) {
-		d.push_back(p.part_holders[p.page_frame_map[parts[i]]]->to_variant());
+		d.push_back(p.part_holders[p.part_holder_map[parts[i]]]->to_variant());
 	}
 
 	Dictionary out;

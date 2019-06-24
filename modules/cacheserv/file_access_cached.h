@@ -86,9 +86,22 @@ protected:
 		int o_length = cache_mgr->write(&cached_file, &buf, sizeof(T));
 	}
 
+	static void _bind_methods() {
+		ClassDB::bind_method(D_METHOD("open", "path", "mode"), &FileAccessCached::_open);
+		ClassDB::bind_method(D_METHOD("close"), &FileAccessCached::close);
+		ClassDB::bind_method(D_METHOD("get_buffer", "len"), &FileAccessCached::_get_buffer);
+		ClassDB::bind_method(D_METHOD("seek", "position"), &FileAccessCached::seek);
+		ClassDB::bind_method(D_METHOD("seek_end", "position"), &FileAccessCached::seek_end);
+	}
+
 public:
 
-	virtual void close() { cache_mgr->close(cached_file); } ///< close a file
+	virtual void close() {
+		if(cached_file.is_valid()) {
+			cache_mgr->close(cached_file);
+			cached_file = RID();
+		}
+	} ///< close a file
 
 	virtual bool is_open() const { return this->cached_file.is_valid(); } ///< true when file is open
 
@@ -112,6 +125,13 @@ public:
 		int o_length = cache_mgr->read(&cached_file, p_dst, p_length);
 		return o_length;
 	} ///< get an array of bytes
+
+	PoolByteArray _get_buffer(int p_length) {
+		PoolByteArray pba;
+		pba.resize(p_length);
+		get_buffer(pba.write().ptr(), p_length);
+		return pba;
+	}
 
 	virtual Error get_error() const { return last_error; } ///< get last error
 
@@ -144,10 +164,9 @@ public:
 	}
 
 	virtual ~FileAccessCached() {
-
+		WARN_PRINT("FileAccesCached destructor");
+		close();
 		memdelete(sem);
-		if(cached_file.is_valid())
-			cache_mgr->close(cached_file);
 	}
 };
 
@@ -165,13 +184,18 @@ protected:
 		ClassDB::bind_method(D_METHOD("open", "path", "mode"), &_FileAccessCached::open);
 		ClassDB::bind_method(D_METHOD("close"), &_FileAccessCached::close);
 		ClassDB::bind_method(D_METHOD("get_buffer", "len"), &_FileAccessCached::get_buffer);
+		ClassDB::bind_method(D_METHOD("seek", "position"), &_FileAccessCached::seek);
+		ClassDB::bind_method(D_METHOD("seek_end", "position"), &_FileAccessCached::seek_end);
 	}
 
 public:
 
 	_FileAccessCached() {}
+	~_FileAccessCached() {
+		WARN_PRINT("FileAccesCached destructor");
+	}
 
-	_FileAccessCached *open(Variant path, Variant mode) {
+	Variant open(Variant path, Variant mode) {
 
 		if(fac._open(String(path), int(mode)) == OK) {
 			return this;
@@ -179,13 +203,17 @@ public:
 	}
 
 	PoolByteArray get_buffer(int len) {
-		PoolByteArray pba = PoolByteArray();
-		PoolByteArray::Write w = pba.write();
-		if (fac.get_buffer(w.ptr(), len) < len) {
-			WARN_PRINT(("Got less than " + itos(len) + " bytes.").utf8().get_data());
-		}
-		return pba;
+		return fac._get_buffer(len);
 	}
+
+	void seek(ssize_t position) {
+		fac.seek(position);
+	}
+
+	void seek_end(ssize_t position) {
+		fac.seek(position);
+	}
+
 
 	void close() {
 
