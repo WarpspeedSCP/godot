@@ -7,6 +7,7 @@ DescriptorInfo::DescriptorInfo(FileAccess *fa, part_id new_range) : guid_prefix(
 	ERR_FAIL_COND(!fa);
 	internal_data_source = fa;
 	total_size = internal_data_source->get_len();
+	sem = Semaphore::create();
 
 }
 

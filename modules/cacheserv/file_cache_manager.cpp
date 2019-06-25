@@ -143,7 +143,7 @@ void FileCacheManager::do_paging_op(DescriptorInfo *desc_info, part_id curr_part
 					cache_info_table.part_holders[i])
 					.set_used(true)
 					.set_recently_used(true)
-					.set_ready(false);
+					.set_ready_false();
 			*curr_part_holder = i;
 			break;
 		}
@@ -184,7 +184,7 @@ void FileCacheManager::do_paging_op(DescriptorInfo *desc_info, part_id curr_part
 		// We reuse the part holder we evicted.
 		*curr_part_holder = frame_to_evict;
 		printf("do_paging_op : curr_part_holder = %lx\n", curr_part_holder);
-		w.set_used(true).set_recently_used(true).set_ready(false);
+		w.set_used(true).set_recently_used(true).set_ready_false();
 	}
 }
 
@@ -233,7 +233,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 		PartHolder::DataWrite w(cache_info_table.part_holders[curr_part_holder]);
 		used_size = desc_info->internal_data_source->get_buffer(w.ptr(), CS_PART_SIZE);
 		s = String((char *)w.ptr()) + " ";
-		PartHolder::MetaWrite(cache_info_table.part_holders[curr_part_holder]).set_used_size(used_size).set_ready(true);
+		PartHolder::MetaWrite(cache_info_table.part_holders[curr_part_holder]).set_used_size(used_size).set_ready_true(desc_info->sem);
 	}
 
 	s.resize(used_size % 100);
@@ -252,7 +252,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset) {
 	desc_info->internal_data_source->seek(offset);
 	{
-		PartHolder::DataRead r(cache_info_table.part_holders[curr_part_holder]);
+		PartHolder::DataRead r(cache_info_table.part_holders[curr_part_holder], desc_info->sem);
 		desc_info->internal_data_source->store_buffer(r.ptr(), CS_PART_SIZE);
 		PartHolder::MetaWrite(cache_info_table.part_holders[curr_part_holder]).set_dirty(false);
 	}
@@ -309,7 +309,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 			WARN_PRINT("Reading first part.");
 
 			{ // Lock the part holder for the operation.
-				PartHolder::DataRead r(cache_info_table.part_holders[curr_part_holder]);
+				PartHolder::DataRead r(cache_info_table.part_holders[curr_part_holder], desc_info.sem);
 
 				// Here, part_holders[curr_part_holder].memory_region + PARTIAL_SIZE(desc_info.offset)
 				//  gives us the address of the first byte to copy which may or may not be on a page boundary.
@@ -352,7 +352,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 
 			// Lock current part holder.
 			{
-				PartHolder::DataRead r(cache_info_table.part_holders[curr_part_holder]);
+				PartHolder::DataRead r(cache_info_table.part_holders[curr_part_holder], desc_info.sem);
 
 				memcpy(
 						(uint8_t *)buffer + buffer_offset,
@@ -388,7 +388,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 			WARN_PRINT("Reading last part.");
 
 			{ // Lock last part for reading data.
-				PartHolder::DataRead r(cache_info_table.part_holders[curr_part_holder]);
+				PartHolder::DataRead r(cache_info_table.part_holders[curr_part_holder], desc_info.sem);
 
 				memcpy(
 						(uint8_t *)buffer + buffer_offset,

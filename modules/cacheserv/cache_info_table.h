@@ -66,8 +66,6 @@ private:
 	RWLock *meta_lock;
 	RWLock *data_lock;
 	volatile bool ready;
-	Semaphore *ready_sem;
-
 public:
 	volatile bool used;
 	PartHolder() :
@@ -92,7 +90,6 @@ public:
 			used(false),
 			dirty(false),
 			ready(false),
-			ready_sem(Semaphore::create()),
 			meta_lock(RWLock::create()),
 			data_lock(RWLock::create())
 	// rd_count(0),
@@ -102,7 +99,6 @@ public:
 	~PartHolder() {
 		memdelete(meta_lock);
 		memdelete(data_lock);
-		memdelete(ready_sem);
 	}
 
 	Variant to_variant() const {
@@ -185,10 +181,10 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		explicit DataRead(const PartHolder *alloc) :
+		DataRead(const PartHolder *alloc, Semaphore *ready_sem) :
 				rwl(alloc->data_lock),
 				mem(alloc->memory_region) {
-			while (!(alloc->ready)) alloc->ready_sem->wait();
+			while (!(alloc->ready)) ready_sem->wait();
 			WARN_PRINT(("Acquiring data READ lock in thread ID "  + itos(Thread::get_caller_id()) ).utf8().get_data());
 			acquire();
 		}
@@ -238,14 +234,16 @@ public:
 			return alloc->ready;
 		}
 
-		_FORCE_INLINE_ MetaWrite &set_ready(bool in) {
-			alloc->ready = in;
+		_FORCE_INLINE_ MetaWrite &set_ready_true(Semaphore *ready_sem) {
+			alloc->ready = true;
+			WARN_PRINT("Part ready.");
+			ready_sem->post();
+			return *this;
+		}
 
-			if (in) {
-				WARN_PRINT("Part ready.");
-				alloc->ready_sem->post();
-			}
-
+		_FORCE_INLINE_ MetaWrite &set_ready_false() {
+			alloc->ready = false;
+			WARN_PRINT("Part not ready.");
 			return *this;
 		}
 
@@ -324,6 +322,7 @@ struct DescriptorInfo {
 	size_t guid_prefix;
 	Vector<part_id> parts;
 	FileAccess *internal_data_source;
+	Semaphore *sem;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
 	explicit DescriptorInfo(FileAccess *fa, part_id new_guid_prefix);
