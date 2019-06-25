@@ -12,10 +12,10 @@ DescriptorInfo::DescriptorInfo(FileAccess *fa, part_id new_range) : guid_prefix(
 
 Variant DescriptorInfo::to_variant(const CacheInfoTable &p) {
 
-	Array d;
+	Dictionary d;
 
 	for(int i = 0; i < parts.size(); ++i) {
-		d.push_back(p.part_holders[p.part_holder_map[parts[i]]]->to_variant());
+		d[itos(parts[i])] = (p.part_holders[p.part_holder_map[parts[i]]]->to_variant());
 	}
 
 	Dictionary out;
