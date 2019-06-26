@@ -1,5 +1,5 @@
 /*************************************************************************/
-/*  page_table.h                                                          */
+/*  cache_info_table.h                                                   */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
@@ -28,13 +28,13 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef PAGE_TABLE_H
-#define PAGE_TABLE_H
+#ifndef CACHE_INFO_TABLE_H
+#define CACHE_INFO_TABLE_H
 
 #include "core/map.h"
 #include "core/object.h"
 #include "core/os/file_access.h"
-#include "core/os/mutex.h"
+#include "core/os/semaphore.h"
 #include "core/os/rw_lock.h"
 #include "core/os/thread.h"
 #include "core/reference.h"
@@ -49,29 +49,30 @@ typedef uint32_t data_descriptor;
 typedef uint32_t frame_id;
 typedef size_t page_id;
 
-struct PageTable;
+struct CacheInfoTable;
 struct Frame;
 struct DescriptorInfo;
 
+class FileCacheManager;
+
 struct Frame {
+	friend class FileCacheManager;
+
 private:
 	uint16_t used_size;
 	uint8_t *const memory_region;
 	bool dirty;
 	bool recently_used;
-	bool used;
-	// volatile uint16_t rd_count; // Number of readers.
-	// volatile uint8_t wr_lock; // When a write lock on this frame is acquired, this
-	RWLock *rwl;
-
+	volatile bool ready;
 public:
+	volatile bool used;
 	Frame() :
 			memory_region(NULL),
 			used_size(0),
 			recently_used(false),
 			used(false),
 			dirty(false),
-			rwl(NULL)
+			ready(false)
 	// rd_count(0),
 	// wr_lock(0)
 	{}
@@ -84,14 +85,20 @@ public:
 			recently_used(false),
 			used(false),
 			dirty(false),
-			rwl(RWLock::create())
+			ready(false)
 	// rd_count(0),
 	// wr_lock(0)
 	{}
 
+	~Frame() {
+
+	}
+
 	Variant to_variant() const {
 		Dictionary a;
-		a["memory_region"] = Variant(String((char *)memory_region));
+		String s = String((char *)memory_region);
+		s.resize(100);
+		a["memory_region"] = Variant(" ... " + s + " ... ");
 		a["used_size"] = Variant((int)used_size);
 		a["recently_used"] = Variant(recently_used);
 		a["used"] = Variant(used);
@@ -100,220 +107,203 @@ public:
 		return Variant(a);
 	}
 
-	~Frame() { memdelete(rwl); }
 
-	class Read {
+	class MetaRead {
 	private:
 		const Frame *alloc;
 		RWLock *rwl;
+
+	public:
+		_FORCE_INLINE_ uint16_t get_used_size() {
+			return alloc->used_size;
+		}
+
+		_FORCE_INLINE_ bool get_dirty() {
+			return alloc->dirty;
+		}
+
+		_FORCE_INLINE_ bool get_used() {
+			return alloc->used;
+		}
+
+		_FORCE_INLINE_ bool get_recently_used() {
+			return alloc->recently_used;
+		}
+
+		_FORCE_INLINE_ bool get_ready() {
+			return alloc->ready;
+		}
+
+		void acquire() {
+			WARN_PRINT(("Acquiring metadata READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			rwl->read_lock();
+		}
+
+		MetaRead() :
+				alloc(NULL),
+				rwl(NULL) {}
+
+		MetaRead(const Frame *alloc, RWLock *meta_lock) :
+				alloc(alloc),
+				rwl(meta_lock) {
+			acquire();
+		}
+
+		~MetaRead() {
+			if (rwl) {
+				rwl->read_unlock();
+				WARN_PRINT(("Released metadata READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			}
+		}
+	};
+
+	class DataRead {
+	private:
+		RWLock *rwl;
 		const uint8_t *mem;
-		Error valid;
 
 	public:
 		_FORCE_INLINE_ const uint8_t &operator[](int p_index) const { return mem[p_index]; }
 		_FORCE_INLINE_ const uint8_t *ptr() const { return mem; }
 
-		_FORCE_INLINE_ uint16_t get_used_size() {
-			return alloc->used_size;
-		}
-
-		_FORCE_INLINE_ bool get_dirty() {
-			return alloc->dirty;
-		}
-
-		_FORCE_INLINE_ bool get_used() {
-			return alloc->used;
-		}
-
-		_FORCE_INLINE_ bool get_recently_used() {
-			return alloc->recently_used;
-		}
-
-		bool is_valid() { return valid == OK; }
-
 		void acquire() {
-			if (valid != OK) {
-				WARN_PRINT("Acquiring lock.");
-				rwl->read_lock();
-				valid = OK;
-			}
+			rwl->read_lock();
 		}
 
-		Read &operator=(const Read &other) {
-			if (rwl == other.rwl)
-				return *this;
-
-			rwl->read_unlock();
-
-			rwl = other.rwl;
-
-			WARN_PRINT("Trying lock.");
-			valid = rwl->read_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
-			mem = other.mem;
-
-			return *this;
-		}
-
-		Read &operator=(const Frame *const frame) {
-			if (rwl == frame->rwl)
-				return *this;
-
-			rwl->read_unlock();
-
-			rwl = frame->rwl;
-
-			WARN_PRINT("Trying lock.");
-			valid = rwl->read_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
-			mem = frame->memory_region;
-
-			return *this;
-		}
-
-		Read() :
-				alloc(NULL),
+		DataRead() :
 				rwl(NULL),
 				mem(NULL) {}
 
-		explicit Read(const Frame *alloc) :
-				alloc(alloc),
-				rwl(alloc->rwl),
+		DataRead(const Frame *alloc, Semaphore *ready_sem, RWLock *data_lock) :
+				rwl(data_lock),
 				mem(alloc->memory_region) {
-			valid = rwl->read_try_lock();
+			while (!(alloc->ready)) ready_sem->wait();
+			WARN_PRINT(("Acquiring data READ lock in thread ID "  + itos(Thread::get_caller_id()) ).utf8().get_data());
+			acquire();
 		}
 
-		explicit Read(const Read &other) :
-				rwl(other.rwl),
-				mem(other.mem) { valid = rwl->read_try_lock(); }
-
-		~Read() {
+		~DataRead() {
 			if (rwl) {
 				rwl->read_unlock();
-				WARN_PRINT("Released lock.");
+				WARN_PRINT(("Releasing data READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
 			}
-
 		}
 	};
 
-	class Write {
+	class MetaWrite {
 	private:
 		Frame *alloc;
 		RWLock *rwl;
-		uint8_t *mem;
-		Error valid;
 
 	public:
-		_FORCE_INLINE_ uint8_t &operator[](int p_index) const { return mem[p_index]; }
-		_FORCE_INLINE_ uint8_t *ptr() const { return mem; }
-
 		_FORCE_INLINE_ uint16_t get_used_size() {
 			return alloc->used_size;
 		}
 
-		_FORCE_INLINE_ void set_used_size(uint16_t in) {
+		_FORCE_INLINE_ MetaWrite &set_used_size(uint16_t in) {
 			alloc->used_size = in;
+			return *this;
 		}
 
 		_FORCE_INLINE_ bool get_dirty() {
 			return alloc->dirty;
 		}
 
-		_FORCE_INLINE_ void set_dirty(bool in) {
+		_FORCE_INLINE_ MetaWrite &set_dirty(bool in) {
 			alloc->dirty = in;
+			return *this;
 		}
 
 		_FORCE_INLINE_ bool get_used() {
 			return alloc->used;
 		}
 
-		_FORCE_INLINE_ void set_used(bool in) {
+		_FORCE_INLINE_ MetaWrite &set_used(bool in) {
 			alloc->used = in;
+			return *this;
+		}
+
+		_FORCE_INLINE_ bool get_ready() {
+			return alloc->ready;
+		}
+
+		_FORCE_INLINE_ MetaWrite &set_ready_true(Semaphore *ready_sem) {
+			alloc->ready = true;
+			WARN_PRINT("Part ready.");
+			ready_sem->post();
+			return *this;
+		}
+
+		_FORCE_INLINE_ MetaWrite &set_ready_false() {
+			alloc->ready = false;
+			WARN_PRINT("Part not ready.");
+			return *this;
 		}
 
 		_FORCE_INLINE_ bool get_recently_used() {
 			return alloc->recently_used;
 		}
 
-		_FORCE_INLINE_ void set_recently_used(bool in) {
+		_FORCE_INLINE_ MetaWrite &set_recently_used(bool in) {
 			alloc->recently_used = in;
+			return *this;
 		}
 
-		bool is_valid() { return valid == OK; }
-
 		void acquire() {
-			if (valid != OK) {
-				WARN_PRINT("Acquiring lock.");
-				rwl->write_lock();
-				valid = OK;
-			}
+			WARN_PRINT(("Acquiring metadata WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			rwl->write_lock();
 		}
 
 		Frame *operator->() {
 			return alloc;
 		}
 
-		Write &operator=(const Write &p_read) {
-			if (rwl == p_read.rwl)
-				return *this;
+		MetaWrite() :
+				alloc(NULL),
+				rwl(NULL) {}
 
-			rwl->write_unlock();
-
-			rwl = p_read.rwl;
-
-			WARN_PRINT("Trying lock.");
-			valid = rwl->write_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
-			mem = p_read.mem;
-
-			return *this;
+		MetaWrite(Frame *const alloc, RWLock *meta_lock) :
+				alloc(alloc),
+				rwl(meta_lock) {
+			acquire();
 		}
 
-		Write &operator=(Frame *const p_read) {
-			if (rwl == p_read->rwl)
-				return *this;
-
-			rwl->write_unlock();
-
-			rwl = p_read->rwl;
-
-			WARN_PRINT("Trying lock.");
-			valid = rwl->write_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-
-			mem = p_read->memory_region;
-
-			alloc = p_read;
-
-			return *this;
-		}
-
-		Write() :
-				rwl(NULL),
-				mem(NULL),
-				valid(ERR_LOCKED) {}
-
-		explicit Write(Frame *const p_alloc) :
-				alloc(p_alloc),
-				rwl(p_alloc->rwl),
-				mem(p_alloc->memory_region) {
-			WARN_PRINT("Trying lock.");
-			valid = rwl->write_try_lock();
-			WARN_PRINT(("Got result " + itos(valid) + " after lock.").utf8().get_data());
-		}
-
-		explicit Write(Write &other) :
-				alloc(other.alloc),
-				rwl(other.rwl),
-				mem(other.mem) { valid = rwl->write_try_lock(); }
-
-		~Write() {
+		~MetaWrite() {
 			if (rwl) {
 				rwl->write_unlock();
-				WARN_PRINT("Released lock.");
+				WARN_PRINT(("Releasing metadata WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			}
+		}
+	};
+
+	class DataWrite {
+	private:
+		RWLock *rwl;
+		uint8_t *mem;
+
+	public:
+		_FORCE_INLINE_ uint8_t &operator[](int p_index) const { return mem[p_index]; }
+		_FORCE_INLINE_ uint8_t *ptr() const { return mem; }
+
+		void acquire() {
+			WARN_PRINT(("Acquiring data WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			rwl->write_lock();
+		}
+
+		DataWrite() :
+				rwl(NULL),
+				mem(NULL) {}
+
+		DataWrite(Frame *const p_alloc, RWLock *data_lock) :
+				rwl(data_lock),
+				mem(p_alloc->memory_region) {
+			acquire();
+		}
+
+		~DataWrite() {
+			if (rwl) {
+				rwl->write_unlock();
+				WARN_PRINT(("Releasing data WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -322,19 +312,26 @@ public:
 struct DescriptorInfo {
 	size_t offset;
 	size_t total_size;
-	size_t range_offset;
+	size_t guid_prefix;
 	Vector<page_id> pages;
 	FileAccess *internal_data_source;
+	Semaphore *sem;
+	RWLock *meta_lock;
+	RWLock *data_lock;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
-	explicit DescriptorInfo(FileAccess *fa, page_id new_range);
-	~DescriptorInfo(){};
+	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix);
+	~DescriptorInfo() {
+		memdelete(sem);
+		memdelete(meta_lock);
+		memdelete(data_lock);
+	}
 
-	Variant to_variant(const PageTable &p);
+	Variant to_variant(const CacheInfoTable &p);
 };
 
-struct PageTable {
-	Set<page_id> ranges = Set<size_t>();
+struct CacheInfoTable {
+	Set<page_id> guid_prefixes = Set<page_id>();
 	Vector<page_id> pages;
 	Vector<Frame *> frames;
 	Map<page_id, frame_id> page_frame_map;
@@ -344,4 +341,4 @@ struct PageTable {
 	size_t total_space;
 };
 
-#endif // !PAGE_TABLE_H
+#endif // !CACHE_INFO_TABLE_H
