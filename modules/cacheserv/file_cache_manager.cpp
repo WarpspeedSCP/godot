@@ -31,8 +31,7 @@
 #include "file_cache_manager.h"
 #include "file_access_cached.h"
 
-#include "drivers/unix/file_access_unix.h"
-#include "drivers/unix/mutex_posix.h"
+#include "core/os/os.h"
 
 #include <fcntl.h>
 #include <time.h>
@@ -43,6 +42,7 @@ static const bool CS_FALSE = true;
 
 FileCacheManager::FileCacheManager() {
 	mutex = Mutex::create();
+	rng.set_seed(OS::get_singleton()->get_ticks_usec());
 
 	cache_info_table.memory_region = memnew_arr(uint8_t, CS_CACHE_SIZE);
 	cache_info_table.page_frame_map.clear();
@@ -129,6 +129,10 @@ void FileCacheManager::remove_data_source(data_descriptor dd) {
 	}
 }
 
+void FileCacheManager::enforce_cache_policy(DescriptorInfo *desc_info, page_id curr_page) {
+
+}
+
 // !!! takes mutable references to all params.
 // This operation selects a new page holder, or evicts an old page holder to hold a new page.
 // TODO: Make this use actual caching algorithms.
@@ -161,8 +165,10 @@ void FileCacheManager::do_paging_op(DescriptorInfo *desc_info, page_id curr_page
 		frame_id frame_to_evict = CS_MEM_VAL_BAD;
 
 		{
+			page_to_evict = cache_policies[desc_info->cache_policy](this);
+
 			//TODO : change as per proper cache algo.
-			page_to_evict = random() % cache_info_table.pages.size();
+			page_to_evict = rng.randi_range(0, cache_info_table.pages.size());
 			page_to_evict = cache_info_table.pages[page_to_evict];
 			frame_to_evict = cache_info_table.page_frame_map[page_to_evict];
 		}
@@ -463,7 +469,6 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 			// Get page holder mapped to page.
 			ERR_FAIL_COND_V((curr_frame = cache_info_table.page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 
-
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset) gives us the start
 			WARN_PRINT("Reading intermediate page.");
 
@@ -487,7 +492,6 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 			ERR_FAIL_COND_V((curr_page = get_page_guid(desc_info, desc_info.offset + data_offset, true)) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
 			ERR_FAIL_COND_V((curr_frame = cache_info_table.page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
-
 
 			WARN_PRINT("Reading last page.");
 
@@ -595,13 +599,12 @@ bool FileCacheManager::eof_reached(const RID *const rid) const {
 }
 
 bool FileCacheManager::check_with_page_op(DescriptorInfo *desc_info, size_t offset) {
-
+	page_id curr_page = CS_GET_PAGE(offset);
 	if (get_page_guid(*desc_info, offset, true) == CS_MEM_VAL_BAD) {
 
 		page_id cp = get_page_guid(*desc_info, offset, false);
 		frame_id cf = CS_MEM_VAL_BAD;
 
-		desc_info->pages.ordered_insert(cp);
 		cache_info_table.pages.ordered_insert(cp);
 
 		do_paging_op(desc_info, cp, &cf);
@@ -611,7 +614,7 @@ bool FileCacheManager::check_with_page_op(DescriptorInfo *desc_info, size_t offs
 
 		return false;
 	}
-
+	enforce_cache_policy(desc_info, curr_page);
 	return true;
 }
 
@@ -622,7 +625,6 @@ bool FileCacheManager::check_with_page_op_and_update(DescriptorInfo *desc_info, 
 		page_id cp = get_page_guid(*desc_info, offset, false);
 		frame_id cf = CS_MEM_VAL_BAD;
 
-		desc_info->pages.ordered_insert(cp);
 		cache_info_table.pages.ordered_insert(cp);
 
 		do_paging_op(desc_info, cp, &cf);
