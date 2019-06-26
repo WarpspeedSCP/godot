@@ -46,16 +46,16 @@
 #include "cacheserv_defines.h"
 
 typedef uint32_t data_descriptor;
-typedef uint32_t part_holder_id;
-typedef size_t part_id;
+typedef uint32_t frame_id;
+typedef size_t page_id;
 
 struct CacheInfoTable;
-struct PartHolder;
+struct Frame;
 struct DescriptorInfo;
 
 class FileCacheManager;
 
-struct PartHolder {
+struct Frame {
 	friend class FileCacheManager;
 
 private:
@@ -66,7 +66,7 @@ private:
 	volatile bool ready;
 public:
 	volatile bool used;
-	PartHolder() :
+	Frame() :
 			memory_region(NULL),
 			used_size(0),
 			recently_used(false),
@@ -77,7 +77,7 @@ public:
 	// wr_lock(0)
 	{}
 
-	explicit PartHolder(
+	explicit Frame(
 			uint8_t *i_memory_region) :
 
 			memory_region(i_memory_region),
@@ -90,7 +90,7 @@ public:
 	// wr_lock(0)
 	{}
 
-	~PartHolder() {
+	~Frame() {
 
 	}
 
@@ -110,7 +110,7 @@ public:
 
 	class MetaRead {
 	private:
-		const PartHolder *alloc;
+		const Frame *alloc;
 		RWLock *rwl;
 
 	public:
@@ -143,7 +143,7 @@ public:
 				alloc(NULL),
 				rwl(NULL) {}
 
-		MetaRead(const PartHolder *alloc, RWLock *meta_lock) :
+		MetaRead(const Frame *alloc, RWLock *meta_lock) :
 				alloc(alloc),
 				rwl(meta_lock) {
 			acquire();
@@ -174,7 +174,7 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		DataRead(const PartHolder *alloc, Semaphore *ready_sem, RWLock *data_lock) :
+		DataRead(const Frame *alloc, Semaphore *ready_sem, RWLock *data_lock) :
 				rwl(data_lock),
 				mem(alloc->memory_region) {
 			while (!(alloc->ready)) ready_sem->wait();
@@ -192,7 +192,7 @@ public:
 
 	class MetaWrite {
 	private:
-		PartHolder *alloc;
+		Frame *alloc;
 		RWLock *rwl;
 
 	public:
@@ -254,7 +254,7 @@ public:
 			rwl->write_lock();
 		}
 
-		PartHolder *operator->() {
+		Frame *operator->() {
 			return alloc;
 		}
 
@@ -262,7 +262,7 @@ public:
 				alloc(NULL),
 				rwl(NULL) {}
 
-		MetaWrite(PartHolder *const alloc, RWLock *meta_lock) :
+		MetaWrite(Frame *const alloc, RWLock *meta_lock) :
 				alloc(alloc),
 				rwl(meta_lock) {
 			acquire();
@@ -294,7 +294,7 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		DataWrite(PartHolder *const p_alloc, RWLock *data_lock) :
+		DataWrite(Frame *const p_alloc, RWLock *data_lock) :
 				rwl(data_lock),
 				mem(p_alloc->memory_region) {
 			acquire();
@@ -313,14 +313,14 @@ struct DescriptorInfo {
 	size_t offset;
 	size_t total_size;
 	size_t guid_prefix;
-	Vector<part_id> parts;
+	Vector<page_id> pages;
 	FileAccess *internal_data_source;
 	Semaphore *sem;
 	RWLock *meta_lock;
 	RWLock *data_lock;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
-	DescriptorInfo(FileAccess *fa, part_id new_guid_prefix);
+	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix);
 	~DescriptorInfo() {
 		memdelete(sem);
 		memdelete(meta_lock);
@@ -331,10 +331,10 @@ struct DescriptorInfo {
 };
 
 struct CacheInfoTable {
-	Set<part_id> guid_prefixes = Set<part_id>();
-	Vector<part_id> parts;
-	Vector<PartHolder *> part_holders;
-	Map<part_id, part_holder_id> part_holder_map;
+	Set<page_id> guid_prefixes = Set<page_id>();
+	Vector<page_id> pages;
+	Vector<Frame *> frames;
+	Map<page_id, frame_id> page_frame_map;
 	uint8_t *memory_region = NULL;
 	size_t available_space;
 	size_t used_space;

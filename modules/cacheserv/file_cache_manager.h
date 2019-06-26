@@ -57,19 +57,19 @@
  *  Here, the offset that this page GUID refers to is 0x401D.
  *  Its range offset is 0x21D30E0000000000.
  *
- *  This lets us distinguish between parts associated with different data sources.
+ *  This lets us distinguish between pages associated with different data sources.
  */
 
 // Get the GUID of the current offset.
-// We can either get the GUID associated with an offset for the particular data source,
+// We can either get the GUID associated with an offset for the pageicular data source,
 // or query whether a page with that GUID is currently tracked.
 //
 // Returns-
 // The GUID, if we are not making a query, or if the page at this offset is already tracked.
 // CS_MEM_VAL_BAD if we are making a query and the current page is not tracked.
-_FORCE_INLINE_ part_id get_part_guid(const DescriptorInfo &di, size_t offset, bool query) {
-	part_id x = di.guid_prefix | CS_GET_PART(offset);
-	if (query && di.parts.find(x) == CS_MEM_VAL_BAD) {
+_FORCE_INLINE_ page_id get_page_guid(const DescriptorInfo &di, size_t offset, bool query) {
+	page_id x = di.guid_prefix | CS_GET_PART(offset);
+	if (query && di.pages.find(x) == CS_MEM_VAL_BAD) {
 		return CS_MEM_VAL_BAD;
 	}
 	return x;
@@ -95,11 +95,11 @@ private:
 	data_descriptor add_data_source(RID *rid, FileAccess *data_source);
 	void remove_data_source(data_descriptor dd);
 
-	bool check_incomplete_page_load(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset);
-	bool check_incomplete_page_store(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset);
-	void do_load_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset);
-	void do_paging_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id *curr_part_holder, size_t offset = 0UL);
-	void do_store_op(DescriptorInfo *desc_info, part_id curr_part, part_holder_id curr_part_holder, size_t offset);
+	bool check_incomplete_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
+	bool check_incomplete_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
+	void do_load_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
+	void do_paging_op(DescriptorInfo *desc_info, page_id curr_page, frame_id *curr_frame, size_t offset = 0UL);
+	void do_store_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 
 	// Returns true if the page at the current offset is already tracked.
 	// Adds the current page to the tracked list, maps it to a frame and returns false if not.
@@ -108,7 +108,7 @@ private:
 	// Returns true if the page at the current offset is already tracked.
 	// Adds the current page to the tracked list, maps it to a frame and returns false if not.
 	// Also sets the values of the given page and frame id args.
-	bool check_with_page_op_and_update(DescriptorInfo *desc_info, part_id *curr_part, part_holder_id *curr_part_holder, size_t offset);
+	bool check_with_page_op_and_update(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame, size_t offset);
 
 protected:
 public:
@@ -136,7 +136,7 @@ public:
 
 	Error init();
 
-	// Checks that all required parts are loaded and enqueues uncached parts for loading.
+	// Checks that all required pages are loaded and enqueues uncached pages for loading.
 	void check_cache(const RID *const rid, size_t length);
 
 	bool is_open() const; ///< true when file is open
