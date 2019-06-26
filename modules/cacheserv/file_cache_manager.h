@@ -21,7 +21,7 @@
 /*                                                                       */
 /* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
 /* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
+/* MERCHANTABILITY, FITNESS FOR A PAGEICULAR PURPOSE AND NONINFRINGEMENT.*/
 /* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
 /* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
@@ -68,7 +68,7 @@
 // The GUID, if we are not making a query, or if the page at this offset is already tracked.
 // CS_MEM_VAL_BAD if we are making a query and the current page is not tracked.
 _FORCE_INLINE_ page_id get_page_guid(const DescriptorInfo &di, size_t offset, bool query) {
-	page_id x = di.guid_prefix | CS_GET_PART(offset);
+	page_id x = di.guid_prefix | CS_GET_PAGE(offset);
 	if (query && di.pages.find(x) == CS_MEM_VAL_BAD) {
 		return CS_MEM_VAL_BAD;
 	}
@@ -155,9 +155,9 @@ public:
 	void flush(const RID *const rid) {
 		data_descriptor dd = rid->get_id();
 		DescriptorInfo *desc_info = files[dd];
-		for (int i = 0; i < desc_info->total_size; i += CS_PART_SIZE) {
+		for (int i = 0; i < desc_info->total_size; i += CS_PAGE_SIZE) {
 
-			enqueue_store(desc_info, CS_GET_PART(i));
+			enqueue_store(desc_info, CS_GET_PAGE(i));
 		}
 	}
 

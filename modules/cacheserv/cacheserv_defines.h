@@ -31,10 +31,10 @@
 #ifndef CACHESERV_DEFINES_H
 #define CACHESERV_DEFINES_H
 
-#define CS_PART_SIZE 4096
-#define CS_CACHE_SIZE (size_t)(CS_PART_SIZE * 1024)
+#define CS_PAGE_SIZE 4096
+#define CS_CACHE_SIZE (size_t)(CS_PAGE_SIZE * 1024)
 #define CS_MEM_VAL_BAD (size_t) ~0
-#define CS_NUM_PART_HOLDERS CS_CACHE_SIZE/CS_PART_SIZE
+#define CS_NUM_FRAMES CS_CACHE_SIZE/CS_PAGE_SIZE
 #define CS_MIN(a, b) a < b ? a : b
 #define CS_SEEK_READ_AHEAD_SIZE 4
 
@@ -42,14 +42,14 @@
 #define STRINGIFY(X) STRINGIFY2(X)
 
 // The number of bytes after the previous page offset for the offset a.
-#define CS_PARTIAL_SIZE(a) ((a) % CS_PART_SIZE)
+#define CS_PARTIAL_SIZE(a) ((a) % CS_PAGE_SIZE)
 
 // Extract offset from GUID by masking the range.
 #define CS_GET_FILE_OFFSET_FROM_GUID(guid) ((guid) & 0x000000FFFFFFFFFF)
 
 // Round off to the previous page offset.
-#define CS_GET_PART(a) ((a) - CS_PARTIAL_SIZE(a))
+#define CS_GET_PAGE(a) ((a) - CS_PARTIAL_SIZE(a))
 
-#define CS_GET_LENGTH_IN_PARTS(length) (((length) / CS_PART_SIZE) + CS_PARTIAL_SIZE(length))
+#define CS_GET_LENGTH_IN_PAGES(length) (((length) / CS_PAGE_SIZE) + CS_PARTIAL_SIZE(length))
 
 #endif // CACHESERV_DEFINES_H
