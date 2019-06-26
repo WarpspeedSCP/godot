@@ -63,8 +63,6 @@ private:
 	uint8_t *const memory_region;
 	bool dirty;
 	bool recently_used;
-	RWLock *meta_lock;
-	RWLock *data_lock;
 	volatile bool ready;
 public:
 	volatile bool used;
@@ -74,9 +72,7 @@ public:
 			recently_used(false),
 			used(false),
 			dirty(false),
-			ready(false),
-			meta_lock(NULL),
-			data_lock(NULL)
+			ready(false)
 	// rd_count(0),
 	// wr_lock(0)
 	{}
@@ -89,16 +85,13 @@ public:
 			recently_used(false),
 			used(false),
 			dirty(false),
-			ready(false),
-			meta_lock(RWLock::create()),
-			data_lock(RWLock::create())
+			ready(false)
 	// rd_count(0),
 	// wr_lock(0)
 	{}
 
 	~PartHolder() {
-		memdelete(meta_lock);
-		memdelete(data_lock);
+
 	}
 
 	Variant to_variant() const {
@@ -150,9 +143,9 @@ public:
 				alloc(NULL),
 				rwl(NULL) {}
 
-		explicit MetaRead(const PartHolder *alloc) :
+		MetaRead(const PartHolder *alloc, RWLock *meta_lock) :
 				alloc(alloc),
-				rwl(alloc->meta_lock) {
+				rwl(meta_lock) {
 			acquire();
 		}
 
@@ -181,8 +174,8 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		DataRead(const PartHolder *alloc, Semaphore *ready_sem) :
-				rwl(alloc->data_lock),
+		DataRead(const PartHolder *alloc, Semaphore *ready_sem, RWLock *data_lock) :
+				rwl(data_lock),
 				mem(alloc->memory_region) {
 			while (!(alloc->ready)) ready_sem->wait();
 			WARN_PRINT(("Acquiring data READ lock in thread ID "  + itos(Thread::get_caller_id()) ).utf8().get_data());
@@ -269,9 +262,9 @@ public:
 				alloc(NULL),
 				rwl(NULL) {}
 
-		explicit MetaWrite(PartHolder *const alloc) :
+		MetaWrite(PartHolder *const alloc, RWLock *meta_lock) :
 				alloc(alloc),
-				rwl(alloc->meta_lock) {
+				rwl(meta_lock) {
 			acquire();
 		}
 
@@ -301,8 +294,8 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		explicit DataWrite(PartHolder *const p_alloc) :
-				rwl(p_alloc->data_lock),
+		DataWrite(PartHolder *const p_alloc, RWLock *data_lock) :
+				rwl(data_lock),
 				mem(p_alloc->memory_region) {
 			acquire();
 		}
@@ -323,10 +316,16 @@ struct DescriptorInfo {
 	Vector<part_id> parts;
 	FileAccess *internal_data_source;
 	Semaphore *sem;
+	RWLock *meta_lock;
+	RWLock *data_lock;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
-	explicit DescriptorInfo(FileAccess *fa, part_id new_guid_prefix);
-	~DescriptorInfo() {}
+	DescriptorInfo(FileAccess *fa, part_id new_guid_prefix);
+	~DescriptorInfo() {
+		memdelete(sem);
+		memdelete(meta_lock);
+		memdelete(data_lock);
+	}
 
 	Variant to_variant(const CacheInfoTable &p);
 };

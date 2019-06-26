@@ -8,7 +8,8 @@ DescriptorInfo::DescriptorInfo(FileAccess *fa, part_id new_range) : guid_prefix(
 	internal_data_source = fa;
 	total_size = internal_data_source->get_len();
 	sem = Semaphore::create();
-
+	meta_lock = RWLock::create();
+	data_lock = RWLock::create();
 }
 
 Variant DescriptorInfo::to_variant(const CacheInfoTable &p) {
