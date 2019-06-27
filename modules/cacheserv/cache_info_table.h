@@ -54,22 +54,24 @@ struct Frame;
 struct DescriptorInfo;
 
 class FileCacheManager;
+enum FileCacheManager::CachePolicy;
 
 struct Frame {
 	friend class FileCacheManager;
 
 private:
-	uint16_t used_size;
 	uint8_t *const memory_region;
+	uint32_t ts_last_use;
+	uint16_t used_size;
 	bool dirty;
-	bool recently_used;
 	volatile bool ready;
-public:
 	volatile bool used;
+
+public:
 	Frame() :
 			memory_region(NULL),
 			used_size(0),
-			recently_used(false),
+			ts_last_use(0),
 			used(false),
 			dirty(false),
 			ready(false)
@@ -82,7 +84,7 @@ public:
 
 			memory_region(i_memory_region),
 			used_size(0),
-			recently_used(false),
+			ts_last_use(0),
 			used(false),
 			dirty(false),
 			ready(false)
@@ -100,7 +102,7 @@ public:
 		s.resize(100);
 		a["memory_region"] = Variant(" ... " + s + " ... ");
 		a["used_size"] = Variant((int)used_size);
-		a["recently_used"] = Variant(recently_used);
+		a["recently_used"] = Variant(ts_last_use);
 		a["used"] = Variant(used);
 		a["dirty"] = Variant(dirty);
 
@@ -126,8 +128,8 @@ public:
 			return alloc->used;
 		}
 
-		_FORCE_INLINE_ bool get_recently_used() {
-			return alloc->recently_used;
+		_FORCE_INLINE_ bool get_last_use() {
+			return alloc->ts_last_use;
 		}
 
 		_FORCE_INLINE_ bool get_ready() {
@@ -240,12 +242,12 @@ public:
 			return *this;
 		}
 
-		_FORCE_INLINE_ bool get_recently_used() {
-			return alloc->recently_used;
+		_FORCE_INLINE_ bool get_last_use() {
+			return alloc->ts_last_use;
 		}
 
-		_FORCE_INLINE_ MetaWrite &set_recently_used(bool in) {
-			alloc->recently_used = in;
+		_FORCE_INLINE_ MetaWrite &set_last_use(uint32_t in) {
+			alloc->ts_last_use = in;
 			return *this;
 		}
 
@@ -314,10 +316,13 @@ struct DescriptorInfo {
 	size_t total_size;
 	size_t guid_prefix;
 	Vector<page_id> pages;
+	String abs_path;
+	FileCacheManager::CachePolicy cache_policy;
 	FileAccess *internal_data_source;
 	Semaphore *sem;
 	RWLock *meta_lock;
 	RWLock *data_lock;
+	bool valid;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
 	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix);
@@ -325,13 +330,14 @@ struct DescriptorInfo {
 		memdelete(sem);
 		memdelete(meta_lock);
 		memdelete(data_lock);
+
 	}
 
 	Variant to_variant(const CacheInfoTable &p);
 };
 
 struct CacheInfoTable {
-	Set<page_id> guid_prefixes = Set<page_id>();
+	Set<page_id> guid_prefixes;
 	Vector<page_id> pages;
 	Vector<Frame *> frames;
 	Map<page_id, frame_id> page_frame_map;
