@@ -112,6 +112,8 @@ void FileCacheManager::remove_data_source(data_descriptor dd) {
 		cache_info_table.guid_prefixes.erase(di->guid_prefix);
 		for (int i = 0; i < cache_info_table.pages.size(); ++i) {
 			if ((cache_info_table.pages[i] & 0xFFFFFF0000000000) == di->guid_prefix) {
+				Frame::MetaWrite(cache_info_table.frames[cache_info_table.page_frame_map[di->pages[i]]], di->meta_lock).set_used(false).set_ready_false();
+				memset(Frame::DataWrite(cache_info_table.frames[cache_info_table.page_frame_map[di->pages[i]]], di->data_lock).ptr(), 0, 4096);
 				cache_info_table.pages.set(i, CS_MEM_VAL_BAD);
 			}
 		}
@@ -130,7 +132,6 @@ void FileCacheManager::remove_data_source(data_descriptor dd) {
 }
 
 void FileCacheManager::enforce_cache_policy(DescriptorInfo *desc_info, page_id curr_page) {
-
 }
 
 // !!! takes mutable references to all params.
@@ -146,7 +147,7 @@ void FileCacheManager::do_paging_op(DescriptorInfo *desc_info, page_id curr_page
 			Frame::MetaWrite(
 					cache_info_table.frames[i], desc_info->meta_lock)
 					.set_used(true)
-					.set_recently_used(true)
+					.set_last_use(0)
 					.set_ready_false();
 			*curr_frame = i;
 			break;
