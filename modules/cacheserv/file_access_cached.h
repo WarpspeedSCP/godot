@@ -98,10 +98,16 @@ public:
 
 	virtual void close() {
 		if(cached_file.is_valid()) {
-			cache_mgr->close(cached_file);
-			cached_file = RID();
+			cache_mgr->close(&cached_file);
 		}
 	} ///< close a file
+
+	void permanent_close() {
+		if(cached_file.is_valid()) {
+			cache_mgr->permanent_close(&cached_file);
+			cached_file = RID();
+		}
+	}
 
 	virtual bool is_open() const { return this->cached_file.is_valid(); } ///< true when file is open
 
@@ -153,7 +159,7 @@ public:
 
 	virtual Error _chmod(const String &p_path, int p_mod) { return ERR_UNAVAILABLE; }
 
-	virtual Error reopen(const String &p_path, int p_mode_flags) {return ERR_UNAVAILABLE; } ///< does not change the AccessType
+	virtual Error reopen(const String &p_path, int p_mode_flags) { return ERR_UNAVAILABLE; } ///< does not change the AccessType
 
 	FileAccessCached() {
 

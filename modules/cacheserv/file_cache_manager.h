@@ -40,6 +40,7 @@
 #include "core/set.h"
 #include "core/variant.h"
 #include "core/vector.h"
+#include "core/ordered_hash_map.h"
 
 #include "cache_info_table.h"
 #include "cacheserv_defines.h"
@@ -107,7 +108,7 @@ private:
 	// CS_MEM_VAL_BAD if we are making a query and the current page is not tracked.
 	_FORCE_INLINE_ page_id get_page_guid(const DescriptorInfo &di, size_t offset, bool query) {
 		page_id x = di.guid_prefix | CS_GET_PAGE(offset);
-		if (query && cache_info_table.pages.find(x) == CS_MEM_VAL_BAD) {
+		if (query && di.pages.find(x) == CS_MEM_VAL_BAD) {
 			return CS_MEM_VAL_BAD;
 		}
 		return x;
@@ -126,16 +127,14 @@ public:
 	typedef page_id (*cache_policy_fn)(FileCacheManager *);
 
 
-	static page_id cp_random(FileCacheManager *fcm) { return fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
 	static page_id cp_lru(FileCacheManager *fcm) { return fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
-	static page_id cp_lru_random(FileCacheManager *fcm) { return fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
 	static page_id cp_fifo(FileCacheManager *fcm) { return fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
+	static page_id cp_keep(FileCacheManager *fcm) { return fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
 
-	cache_policy_fn cache_policies[4] = {
-		&FileCacheManager::cp_random,
+	cache_policy_fn cache_policies[3] = {
 		&FileCacheManager::cp_lru,
-		&FileCacheManager::cp_lru_random,
-		&FileCacheManager::cp_fifo
+		&FileCacheManager::cp_fifo,
+		&FileCacheManager::cp_keep
 	};
 
 	FileCacheManager();
@@ -178,14 +177,7 @@ public:
 	bool eof_reached(const RID *const rid) const; ///< reading passed EOF
 
 	// Flush cache to disk.
-	void flush(const RID *const rid) {
-		data_descriptor dd = rid->get_id();
-		DescriptorInfo *desc_info = files[dd];
-		for (int i = 0; i < desc_info->total_size; i += CS_PAGE_SIZE) {
-
-			enqueue_store(desc_info, CS_GET_PAGE(i));
-		}
-	}
+	void flush(const RID *const rid);
 
 	bool file_exists(const String &p_name) const; ///< return true if a file exists
 
@@ -196,42 +188,15 @@ public:
 	// Error reopen(const String &p_path, int p_mode_flags); ///< does not change the AccessType
 
 	// Returns an RID to an opened file.
-	RID open(const String &path, int p_mode) {
-		printf("%s %d\n", path.utf8().get_data(), p_mode);
-
-		ERR_FAIL_COND_V(!mutex, RID());
-		ERR_FAIL_COND_V(path.empty(), RID());
-
-		MutexLock ml = MutexLock(mutex);
-
-		// Will be freed when close is called with the corresponding RID.
-		CachedResourceHandle *hdl = memnew(CachedResourceHandle);
-		RID rid = handle_owner.make_rid(hdl);
-
-		ERR_FAIL_COND_V(!rid.is_valid(), RID());
-		FileAccess *fa = FileAccess::open(path, p_mode);
-		add_data_source(&rid, fa);
-		printf("open file %s with mode %d\nGot RID %d\n", path.utf8().get_data(), p_mode, rid.get_id());
-		return rid;
-	}
+	RID open(const String &path, int p_mode);
 
 	// Close the file but keep its contents in the cache. None of the state information is invalidated.
-	void close(RID rid) {
-		MutexLock ml(mutex);
-		files[rid.get_id()]->valid = false;
-		files[rid.get_id()]->internal_data_source->close();
-	}
+	void close(const RID *const rid);
 
 	// Invalidates the RID. it *will not* be valid after a call to this function.
-	void permanent_close(RID rid) {
-		printf("permanently close file with RID %d\n", rid.get_id());
-		MutexLock ml = MutexLock(mutex);
-		data_descriptor dd = rid.get_id();
-		handle_owner.free(rid);
-		memdelete(rid.get_data());
-		remove_data_source(dd);
-		rid = RID();
-	}
+	void permanent_close(const RID *const rid);
+
+	Error reopen(const RID *const rid, int mode);
 
 	// Expects that the page at the given offset is in the cache.
 	void enqueue_load(DescriptorInfo *desc_info, size_t offset) {

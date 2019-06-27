@@ -54,7 +54,6 @@ struct Frame;
 struct DescriptorInfo;
 
 class FileCacheManager;
-enum FileCacheManager::CachePolicy;
 
 struct Frame {
 	friend class FileCacheManager;
@@ -317,7 +316,7 @@ struct DescriptorInfo {
 	size_t guid_prefix;
 	Vector<page_id> pages;
 	String abs_path;
-	FileCacheManager::CachePolicy cache_policy;
+	int cache_policy;
 	FileAccess *internal_data_source;
 	Semaphore *sem;
 	RWLock *meta_lock;
@@ -337,9 +336,9 @@ struct DescriptorInfo {
 };
 
 struct CacheInfoTable {
-	Set<page_id> guid_prefixes;
 	Vector<page_id> pages;
 	Vector<Frame *> frames;
+	Set<page_id> pages_by_cache_policy[3];
 	Map<page_id, frame_id> page_frame_map;
 	uint8_t *memory_region = NULL;
 	size_t available_space;

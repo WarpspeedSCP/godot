@@ -39,6 +39,9 @@
 
 static const bool CS_TRUE = true;
 static const bool CS_FALSE = true;
+#define RID_TO_DD(op) (size_t)rid op get_id() & 0x0000000000FFFFFF
+#define RID_TO_DD_PTR RID_TO_DD(->)
+#define RID_TO_DD_REF RID_TO_DD(.)
 
 FileCacheManager::FileCacheManager() {
 	mutex = Mutex::create();
@@ -48,7 +51,6 @@ FileCacheManager::FileCacheManager() {
 	cache_info_table.page_frame_map.clear();
 	cache_info_table.pages.clear();
 	cache_info_table.frames.clear();
-	cache_info_table.guid_prefixes.clear();
 
 	cache_info_table.available_space = CS_CACHE_SIZE;
 	cache_info_table.used_space = 0;
@@ -89,18 +91,16 @@ FileCacheManager::~FileCacheManager() {
 
 data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_source) {
 	ERR_FAIL_COND_V(!rid->is_valid(), CS_MEM_VAL_BAD);
-	data_descriptor dd = rid->get_id();
+	data_descriptor dd = RID_TO_DD_PTR;
 
-	size_t new_guid_prefix;
-	while (cache_info_table.guid_prefixes.has(new_guid_prefix = (size_t)random() << 40))
-		;
 
-	files[dd] = memnew(DescriptorInfo(data_source, new_guid_prefix));
-	cache_info_table.guid_prefixes.insert(new_guid_prefix);
 
-	for (Set<page_id>::Element *i = cache_info_table.guid_prefixes.front(); i; i = i->next())
-		printf("\t\t%lx\n", i->get());
-
+	files[dd] = memnew(DescriptorInfo(data_source, (size_t)dd << 40));
+	WARN_PRINTS(files[dd]->abs_path);
+	const data_descriptor *key = files.next(NULL);
+	for (; key; key = files.next(key)) {
+		printf("\t\t%lx\n", files[*key]);
+	}
 	ERR_FAIL_COND_V(files[dd] == NULL, CS_MEM_VAL_BAD);
 	seek(rid, 0, SEEK_SET);
 	return dd;
@@ -109,7 +109,6 @@ data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_sou
 void FileCacheManager::remove_data_source(data_descriptor dd) {
 	if (files.has(dd)) {
 		DescriptorInfo *di = files[dd];
-		cache_info_table.guid_prefixes.erase(di->guid_prefix);
 		for (int i = 0; i < cache_info_table.pages.size(); ++i) {
 			if ((cache_info_table.pages[i] & 0xFFFFFF0000000000) == di->guid_prefix) {
 				Frame::MetaWrite(cache_info_table.frames[cache_info_table.page_frame_map[di->pages[i]]], di->meta_lock).set_used(false).set_ready_false();
@@ -176,22 +175,25 @@ void FileCacheManager::do_paging_op(DescriptorInfo *desc_info, page_id curr_page
 
 		printf("Evicting page %lx mapped to page holder %lx\n", page_to_evict, frame_to_evict);
 
+		// FIXME: VERY BIG LOGIC ERROR HERE. MUST FIX FOR PROPER WRITEBACK AFTER CHANGES ARE MADE IN-CACHE.
 		Frame::MetaWrite w(cache_info_table.frames[frame_to_evict], desc_info->meta_lock);
 		if (w.get_dirty()) {
-			enqueue_store(desc_info, CS_GET_FILE_OFFSET_FROM_GUID(curr_page));
+			enqueue_store(desc_info, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
 		}
 
 		// Reset flags.
-		w.set_dirty(false).set_recently_used(false).set_used(false);
+		w.set_dirty(false).set_last_use(0).set_used(false);
 
+		// FIXME: OLD DATA REMOVED BEFORE IT CAN BE WRITTEN BACK!
 		// Erase old info.
 		cache_info_table.page_frame_map.erase(page_to_evict);
 		cache_info_table.pages.erase(page_to_evict);
+		files[desc_info->guid_prefix]->pages.erase(page_to_evict);
 
 		// We reuse the page holder we evicted.
 		*curr_frame = frame_to_evict;
 		printf("do_paging_op : curr_frame = %lx\n", curr_frame);
-		w.set_used(true).set_recently_used(true).set_ready_false();
+		w.set_used(true).set_last_use(1).set_ready_false();
 	}
 }
 
@@ -288,28 +290,11 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 		// We need to handle the first and last frames differently,
 		// because the data to be copied may not start at a page boundary, and may not end on a page boundary.
 		{
+
 			// Query for the page with the current offset.
-
-			//ERR_FAIL_COND_V((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD)
-			{
-				if (unlikely((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == (size_t)~0)) {
-					_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition ' " _STR((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == (size_t)~0) " ' is true. returned: " _STR((size_t)~0));
-					return (size_t)~0;
-				} else
-					_err_error_exists = false;
-			}
+			ERR_FAIL_COND_V((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
-
-			//ERR_FAIL_COND_V((curr_frame = cache_info_table.page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
-
-			{
-				if (unlikely((curr_frame = cache_info_table.page_frame_map[curr_page]) == (size_t)~0)) {
-					_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition ' " _STR((curr_frame = cache_info_table.page_frame_map[curr_page]) == (size_t)~0) " ' is true. returned: " _STR((size_t)~0));
-					return (size_t)~0;
-				} else
-					_err_error_exists = false;
-			}
-
+			ERR_FAIL_COND_V((curr_frame = cache_info_table.page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 			// The end offset of the first page may not be greater than the start offset of the next page.
 			initial_end_offset = CLAMP(initial_start_offset + length, 0, CS_GET_PAGE(initial_start_offset) + CS_PAGE_SIZE);
 
@@ -335,25 +320,10 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 		// Pages in the middle must be copied in full.
 		while (buffer_offset < CS_GET_PAGE(length)) {
 
-			{
-				if (unlikely((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == (size_t)~0)) {
-					_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition ' " _STR((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == (size_t)~0) " ' is true. returned: " _STR((size_t)~0));
-					return (size_t)~0;
-				} else
-					_err_error_exists = false;
-			}
+			// Query for the page with the current offset.
+			ERR_FAIL_COND_V((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
-
-			//ERR_FAIL_COND_V((curr_frame = cache_info_table.page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
-
-			{
-				if (unlikely((curr_frame = cache_info_table.page_frame_map[curr_page]) == (size_t)~0)) {
-					_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition ' " _STR((curr_frame = cache_info_table.page_frame_map[curr_page]) == (size_t)~0) " ' is true. returned: " _STR((size_t)~0));
-					return (size_t)~0;
-				} else
-					_err_error_exists = false;
-			}
-
+			ERR_FAIL_COND_V((curr_frame = cache_info_table.page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info.offset) gives us the start
 			WARN_PRINT("Reading intermediate page.");
 
@@ -373,24 +343,11 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 		// For final potentially pageially filled page
 		if (initial_end_offset == CS_PAGE_SIZE && final_partial_length) {
 
-			{
-				if (unlikely((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == (size_t)~0)) {
-					_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition ' " _STR((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == (size_t)~0) " ' is true. returned: " _STR((size_t)~0));
-					return (size_t)~0;
-				} else
-					_err_error_exists = false;
-			}
+			// Query for the page with the current offset.
+			ERR_FAIL_COND_V((curr_page = get_page_guid(desc_info, desc_info.offset + buffer_offset, true)) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
+			ERR_FAIL_COND_V((curr_frame = cache_info_table.page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 
-			//ERR_FAIL_COND_V((curr_frame = cache_info_table.page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
-
-			{
-				if (unlikely((curr_frame = cache_info_table.page_frame_map[curr_page]) == (size_t)~0)) {
-					_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition ' " _STR((curr_frame = cache_info_table.page_frame_map[curr_page]) == (size_t)~0) " ' is true. returned: " _STR((size_t)~0));
-					return (size_t)~0;
-				} else
-					_err_error_exists = false;
-			}
 
 			WARN_PRINT("Reading last page.");
 
@@ -515,7 +472,7 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 
 // The seek operation just uses the POSIX seek modes, which will probably get replaced later.
 size_t FileCacheManager::seek(const RID *const rid, size_t new_offset, int mode) {
-	DescriptorInfo **elem = files.getptr(rid->get_id());
+	DescriptorInfo *elem = files[(data_descriptor)RID_TO_DD_PTR];
 
 	if (!elem) {
 
@@ -523,7 +480,7 @@ size_t FileCacheManager::seek(const RID *const rid, size_t new_offset, int mode)
 
 	} else {
 
-		DescriptorInfo *desc_info = *elem;
+		DescriptorInfo *desc_info = elem;
 		size_t curr_offset = desc_info->offset;
 		size_t end_offset = desc_info->total_size;
 		ssize_t eff_offset = 0;
@@ -577,8 +534,16 @@ size_t FileCacheManager::seek(const RID *const rid, size_t new_offset, int mode)
 	}
 }
 
+void FileCacheManager::flush(const RID *const rid) {
+	DescriptorInfo *desc_info = files[RID_TO_DD_PTR];
+	for (int i = 0; i < desc_info->total_size; i += CS_PAGE_SIZE) {
+
+		enqueue_store(desc_info, CS_GET_PAGE(i));
+	}
+}
+
 size_t FileCacheManager::get_len(const RID *const rid) const {
-	data_descriptor dd = rid->get_id();
+	data_descriptor dd = RID_TO_DD_PTR;
 	size_t size = files[dd]->internal_data_source->get_len();
 	if (size > files[dd]->total_size) {
 		files[dd]->total_size = size;
@@ -586,6 +551,25 @@ size_t FileCacheManager::get_len(const RID *const rid) const {
 
 	return size;
 }
+
+	RID FileCacheManager::open(const String &path, int p_mode) {
+		printf("%s %d\n", path.utf8().get_data(), p_mode);
+
+		ERR_FAIL_COND_V(!mutex, RID());
+		ERR_FAIL_COND_V(path.empty(), RID());
+
+		MutexLock ml = MutexLock(mutex);
+
+		// Will be freed when close is called with the corresponding RID.
+		CachedResourceHandle *hdl = memnew(CachedResourceHandle);
+		RID rid = handle_owner.make_rid(hdl);
+
+		ERR_FAIL_COND_V(!rid.is_valid(), RID());
+		FileAccess *fa = FileAccess::open(path, p_mode);
+		add_data_source(&rid, fa);
+		printf("open file %s with mode %d\nGot RID %d\n", path.utf8().get_data(), p_mode, RID_TO_DD_REF);
+		return rid;
+	}
 
 bool FileCacheManager::file_exists(const String &p_name) const {
 	FileAccess *f = FileAccess::create(FileAccess::ACCESS_FILESYSTEM);
@@ -595,7 +579,7 @@ bool FileCacheManager::file_exists(const String &p_name) const {
 }
 
 bool FileCacheManager::eof_reached(const RID *const rid) const {
-	bool eof = files[rid->get_id()]->internal_data_source->eof_reached();
+	bool eof = files[RID_TO_DD_PTR]->internal_data_source->eof_reached();
 	return eof;
 }
 
@@ -607,6 +591,7 @@ bool FileCacheManager::check_with_page_op(DescriptorInfo *desc_info, size_t offs
 		frame_id cf = CS_MEM_VAL_BAD;
 
 		cache_info_table.pages.ordered_insert(cp);
+		desc_info->pages.ordered_insert(cp);
 
 		do_paging_op(desc_info, cp, &cf);
 		ERR_FAIL_COND_V(cf == CS_MEM_VAL_BAD, false);
@@ -627,6 +612,7 @@ bool FileCacheManager::check_with_page_op_and_update(DescriptorInfo *desc_info, 
 		frame_id cf = CS_MEM_VAL_BAD;
 
 		cache_info_table.pages.ordered_insert(cp);
+		desc_info->pages.ordered_insert(cp);
 
 		do_paging_op(desc_info, cp, &cf);
 		ERR_FAIL_COND_V(cf == CS_MEM_VAL_BAD, false);
@@ -643,6 +629,33 @@ bool FileCacheManager::check_with_page_op_and_update(DescriptorInfo *desc_info, 
 
 	return true;
 }
+
+void FileCacheManager::close(const RID *const rid) {
+	MutexLock ml(mutex);
+	files[RID_TO_DD_PTR]->valid = false;
+	files[RID_TO_DD_PTR]->internal_data_source->close();
+}
+
+void FileCacheManager::permanent_close(const RID *const rid) {
+	printf("permanently close file with RID %d\n", RID_TO_DD_PTR);
+	MutexLock ml = MutexLock(mutex);
+	data_descriptor dd = RID_TO_DD_PTR;
+	handle_owner.free(*rid);
+	memdelete(rid->get_data());
+	remove_data_source(dd);
+}
+
+	Error FileCacheManager::reopen(const RID *const rid, int mode) {
+		DescriptorInfo *di = files[RID_TO_DD_PTR];
+		if(!di->valid) {
+			di->valid = true;
+			return di->internal_data_source->reopen(di->abs_path, mode);
+
+		} else {
+			return di->internal_data_source->reopen(di->abs_path, mode);
+			// FIXME: BAD SIDE EFFECTS OF CHANGING FILE MODES!!!
+		}
+	}
 
 FileCacheManager *FileCacheManager::singleton = NULL;
 _FileCacheManager *_FileCacheManager::singleton = NULL;
@@ -708,7 +721,7 @@ void FileCacheManager::thread_func(void *p_udata) {
 }
 
 void FileCacheManager::check_cache(const RID *const rid, size_t length) {
-	DescriptorInfo *desc_info = files[rid->get_id()];
+	DescriptorInfo *desc_info = files[RID_TO_DD_PTR];
 
 	for (int i = desc_info->offset; i < desc_info->offset + length; i += CS_PAGE_SIZE) {
 		if (!check_with_page_op(desc_info, i)) {
