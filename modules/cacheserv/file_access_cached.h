@@ -114,7 +114,10 @@ public:
 	virtual String get_path() const { return rel_path; } /// returns the path for the current open file
 	virtual String get_path_absolute() const { return abs_path; } /// returns the absolute path for the current open file
 
-	virtual void seek(size_t p_position) { cache_mgr->seek(&cached_file, p_position); } ///< seek to a given position
+	virtual void seek(size_t p_position) {
+		cache_mgr->seek(&cached_file, p_position);
+		cache_mgr->check_cache(&cached_file, CS_LEN_UNSPECIFIED);
+	} ///< seek to a given position
 
 	virtual void seek_end(int64_t p_position ) { cache_mgr->seek_end(&cached_file, p_position); } ///< seek from the end of file
 

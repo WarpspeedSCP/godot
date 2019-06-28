@@ -89,13 +89,13 @@ FileCacheManager::~FileCacheManager() {
 	memdelete(this->mutex);
 }
 
-data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_source) {
+data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_source, int cache_policy) {
 	ERR_FAIL_COND_V(!rid->is_valid(), CS_MEM_VAL_BAD);
 	data_descriptor dd = RID_TO_DD_PTR;
 
 
 
-	files[dd] = memnew(DescriptorInfo(data_source, (size_t)dd << 40));
+	files[dd] = memnew(DescriptorInfo(data_source, (size_t)dd << 40, cache_policy));
 	WARN_PRINTS(files[dd]->abs_path);
 	const data_descriptor *key = files.next(NULL);
 	for (; key; key = files.next(key)) {
@@ -131,6 +131,7 @@ void FileCacheManager::remove_data_source(data_descriptor dd) {
 }
 
 void FileCacheManager::enforce_cache_policy(DescriptorInfo *desc_info, page_id curr_page) {
+
 }
 
 // !!! takes mutable references to all params.
@@ -165,7 +166,7 @@ void FileCacheManager::do_paging_op(DescriptorInfo *desc_info, page_id curr_page
 		frame_id frame_to_evict = CS_MEM_VAL_BAD;
 
 		{
-			page_to_evict = cache_policies[desc_info->cache_policy](this);
+			// page_to_evict = cache_policies[desc_info->cache_policy](this);
 
 			//TODO : change as per proper cache algo.
 			page_to_evict = rng.randi_range(0, cache_info_table.pages.size());
@@ -188,7 +189,7 @@ void FileCacheManager::do_paging_op(DescriptorInfo *desc_info, page_id curr_page
 		// Erase old info.
 		cache_info_table.page_frame_map.erase(page_to_evict);
 		cache_info_table.pages.erase(page_to_evict);
-		files[desc_info->guid_prefix]->pages.erase(page_to_evict);
+		files[(data_descriptor)((size_t)(page_to_evict && 0xFFFFFF0000000000) >> 40)]->pages.erase(page_to_evict);
 
 		// We reuse the page holder we evicted.
 		*curr_frame = frame_to_evict;
@@ -508,20 +509,21 @@ size_t FileCacheManager::seek(const RID *const rid, size_t new_offset, int mode)
 
 			// In this case, there can only be a hole and no data, so we only
 			// do a paging operation to represent it in memory, in case of a write.
-		} else if (eff_offset > end_offset) {
-			WARN_PRINT(("Seek op with effective offset" + itos(eff_offset)).utf8().get_data());
-			for (int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
-				check_with_page_op(desc_info, eff_offset + i * CS_PAGE_SIZE);
-				WARN_PRINT(("Checked page " + itos(CS_GET_PAGE(eff_offset + i * CS_PAGE_SIZE))).utf8().get_data());
-			}
-
-		} else {
-			for (int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
-				check_with_page_op_and_update(desc_info, &curr_page, &curr_frame, eff_offset + i * CS_PAGE_SIZE);
-				enqueue_load(desc_info, curr_page);
-				WARN_PRINT(("Checked and enqueued load of page " + itos(CS_GET_PAGE(eff_offset + i * CS_PAGE_SIZE))).utf8().get_data());
-			}
 		}
+		// else if (eff_offset > end_offset) {
+		// 	WARN_PRINT(("Seek op with effective offset" + itos(eff_offset)).utf8().get_data());
+		// 	for (int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
+		// 		check_with_page_op(desc_info, eff_offset + i * CS_PAGE_SIZE);
+		// 		WARN_PRINT(("Checked page " + itos(CS_GET_PAGE(eff_offset + i * CS_PAGE_SIZE))).utf8().get_data());
+		// 	}
+
+		// } else {
+		// 	for (int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
+		// 		check_with_page_op_and_update(desc_info, &curr_page, &curr_frame, eff_offset + i * CS_PAGE_SIZE);
+		// 		enqueue_load(desc_info, curr_page);
+		// 		WARN_PRINT(("Checked and enqueued load of page " + itos(CS_GET_PAGE(eff_offset + i * CS_PAGE_SIZE))).utf8().get_data());
+		// 	}
+		// }
 
 		// Update the offset.
 
@@ -727,6 +729,32 @@ void FileCacheManager::check_cache(const RID *const rid, size_t length) {
 		if (!check_with_page_op(desc_info, i)) {
 			enqueue_load(desc_info, i);
 		}
+	}
+}
+
+void FileCacheManager::cp_lru(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length) {
+
+	if(length == CS_LEN_UNSPECIFIED) {
+
+	} else {
+
+	}
+}
+
+void FileCacheManager::cp_keep(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length) {
+	page_id curr_page = CS_GET_PAGE(desc_info->offset);
+	// TODO: ENTRY POINT FOR cache algo is DO_PAGE_OP!
+
+	size_t final_length = CLAMP(length, 0, CS_N_MAX_KEEP_DEFAULT);
+
+
+}
+
+void FileCacheManager::cp_read_ahead(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length) {
+	if(length == CS_LEN_UNSPECIFIED) {
+
+	} else {
+
 	}
 }
 

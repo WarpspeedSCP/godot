@@ -317,6 +317,7 @@ struct DescriptorInfo {
 	Vector<page_id> pages;
 	String abs_path;
 	int cache_policy;
+	int max_pages;
 	FileAccess *internal_data_source;
 	Semaphore *sem;
 	RWLock *meta_lock;
@@ -324,12 +325,11 @@ struct DescriptorInfo {
 	bool valid;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
-	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix);
+	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix, int cache_policy);
 	~DescriptorInfo() {
 		memdelete(sem);
 		memdelete(meta_lock);
 		memdelete(data_lock);
-
 	}
 
 	Variant to_variant(const CacheInfoTable &p);

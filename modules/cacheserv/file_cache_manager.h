@@ -118,22 +118,21 @@ protected:
 public:
 
 	enum CachePolicy {
-		LRU,
-		FIFO,
-		LRU_RANDOM,
-		RANDOM
+		KEEP,
+		READ_AHEAD,
+		LRU
 	};
 
-	typedef page_id (*cache_policy_fn)(FileCacheManager *);
+	typedef void (*cache_policy_fn)(FileCacheManager *, DescriptorInfo *, size_t);
 
 
-	static page_id cp_lru(FileCacheManager *fcm) { return fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
-	static page_id cp_fifo(FileCacheManager *fcm) { return fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
-	static page_id cp_keep(FileCacheManager *fcm) { return fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
+	static void cp_lru(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length);
+	static void cp_read_ahead(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length) {  fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
+	static void cp_keep(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length) {  fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
 
 	cache_policy_fn cache_policies[3] = {
 		&FileCacheManager::cp_lru,
-		&FileCacheManager::cp_fifo,
+		&FileCacheManager::cp_read_ahead,
 		&FileCacheManager::cp_keep
 	};
 
