@@ -20,13 +20,14 @@ struct CtrlOp {
 	};
 
 	DescriptorInfo *di;
+	frame_id frame;
 	size_t offset;
 	uint8_t type;
 
 
 	CtrlOp() : di(NULL), offset(CS_MEM_VAL_BAD), type(QUIT) {}
 
-	CtrlOp(DescriptorInfo *i_di, size_t i_offset, uint8_t i_type) : di(i_di), offset(i_offset), type(i_type) {}
+	CtrlOp(DescriptorInfo *i_di, frame_id frame, size_t i_offset, uint8_t i_type) : di(i_di), frame(frame), offset(i_offset), type(i_type) {}
 };
 
 class CtrlQueue {
