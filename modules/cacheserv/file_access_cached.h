@@ -60,13 +60,16 @@ private:
 
 protected:
 
-	virtual Error _open(const String &p_path, int p_mode_flags) {
-
-		cached_file = cache_mgr->open(p_path, p_mode_flags);
+	Error cached_open(const String &p_path, int p_mode_flags, int cache_policy) {
+		cached_file = cache_mgr->open(p_path, p_mode_flags, cache_policy);
 		if(cached_file.is_valid())
 			return OK;
 		else
 			return ERR_CANT_OPEN;
+	}
+
+	virtual Error _open(const String &p_path, int p_mode_flags) {
+		return ERR_UNAVAILABLE;
 	} ///< open a file
 
 	template <typename T>
@@ -153,7 +156,7 @@ public:
 		cache_mgr->check_cache(&cached_file, p_length);
 		int o_length = cache_mgr->write(&cached_file, p_src, p_length);
 		if(p_length < o_length)
-			ERR_PRINT(("Wrote less than " + itos(p_length) + " bytes.\n").utf8().get_data());
+			ERR_PRINT(("Wrote less than " + itoh(p_length) + " bytes.\n").utf8().get_data());
 	} ///< store an array of bytes
 
 	virtual bool file_exists(const String &p_name) { return cache_mgr->file_exists(p_name); } ///< return true if a file exists
@@ -190,7 +193,7 @@ protected:
 	FileAccessCached fac;
 
 	static void _bind_methods() {
-		ClassDB::bind_method(D_METHOD("open", "path", "mode"), &_FileAccessCached::open);
+		ClassDB::bind_method(D_METHOD("open", "path", "mode", "cache_policy"), &_FileAccessCached::open);
 		ClassDB::bind_method(D_METHOD("close"), &_FileAccessCached::close);
 		ClassDB::bind_method(D_METHOD("get_buffer", "len"), &_FileAccessCached::get_buffer);
 		ClassDB::bind_method(D_METHOD("seek", "position"), &_FileAccessCached::seek);
@@ -204,9 +207,9 @@ public:
 		WARN_PRINT("FileAccesCached destructor");
 	}
 
-	Variant open(Variant path, Variant mode) {
+	Variant open(String path, int mode, int cache_policy) {
 
-		if(fac._open(String(path), int(mode)) == OK) {
+		if(fac.cached_open(path, mode, cache_policy) == OK) {
 			return this;
 		} else return NULL;
 	}
