@@ -45,6 +45,12 @@
 
 #include "cacheserv_defines.h"
 
+_FORCE_INLINE_ String itoh(size_t num) {
+	char x[100];
+	sprintf(x, "%lx\0", num);
+	return String(x);
+}
+
 typedef uint32_t data_descriptor;
 typedef uint32_t frame_id;
 typedef size_t page_id;
@@ -100,8 +106,8 @@ public:
 		String s = String((char *)memory_region);
 		s.resize(100);
 		a["memory_region"] = Variant(" ... " + s + " ... ");
-		a["used_size"] = Variant((int)used_size);
-		a["recently_used"] = Variant(ts_last_use);
+		a["used_size"] = Variant(itoh(used_size));
+		a["time_since_last_use"] = Variant(itoh(ts_last_use));
 		a["used"] = Variant(used);
 		a["dirty"] = Variant(dirty);
 
@@ -127,7 +133,7 @@ public:
 			return alloc->used;
 		}
 
-		_FORCE_INLINE_ bool get_last_use() {
+		_FORCE_INLINE_ uint32_t get_last_use() {
 			return alloc->ts_last_use;
 		}
 
@@ -136,7 +142,7 @@ public:
 		}
 
 		void acquire() {
-			WARN_PRINT(("Acquiring metadata READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			// WARN_PRINT(("Acquiring metadata READ lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
 			rwl->read_lock();
 		}
 
@@ -153,7 +159,7 @@ public:
 		~MetaRead() {
 			if (rwl) {
 				rwl->read_unlock();
-				WARN_PRINT(("Released metadata READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+				// WARN_PRINT(("Released metadata READ lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -179,14 +185,14 @@ public:
 				rwl(data_lock),
 				mem(alloc->memory_region) {
 			while (!(alloc->ready)) ready_sem->wait();
-			WARN_PRINT(("Acquiring data READ lock in thread ID "  + itos(Thread::get_caller_id()) ).utf8().get_data());
+			// WARN_PRINT(("Acquiring data READ lock in thread ID "  + itoh(Thread::get_caller_id()) ).utf8().get_data());
 			acquire();
 		}
 
 		~DataRead() {
 			if (rwl) {
 				rwl->read_unlock();
-				WARN_PRINT(("Releasing data READ lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+				// WARN_PRINT(("Releasing data READ lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -241,7 +247,7 @@ public:
 			return *this;
 		}
 
-		_FORCE_INLINE_ bool get_last_use() {
+		_FORCE_INLINE_ uint32_t get_last_use() {
 			return alloc->ts_last_use;
 		}
 
@@ -251,7 +257,7 @@ public:
 		}
 
 		void acquire() {
-			WARN_PRINT(("Acquiring metadata WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			// WARN_PRINT(("Acquiring metadata WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
 			rwl->write_lock();
 		}
 
@@ -272,7 +278,7 @@ public:
 		~MetaWrite() {
 			if (rwl) {
 				rwl->write_unlock();
-				WARN_PRINT(("Releasing metadata WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+				// WARN_PRINT(("Releasing metadata WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -287,7 +293,7 @@ public:
 		_FORCE_INLINE_ uint8_t *ptr() const { return mem; }
 
 		void acquire() {
-			WARN_PRINT(("Acquiring data WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+			// WARN_PRINT(("Acquiring data WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
 			rwl->write_lock();
 		}
 
@@ -295,16 +301,17 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		DataWrite(Frame *const p_alloc, RWLock *data_lock) :
+		DataWrite(Frame *const p_alloc, Semaphore *ready_sem, RWLock *data_lock) :
 				rwl(data_lock),
 				mem(p_alloc->memory_region) {
+			while ( p_alloc->dirty ) ready_sem->wait();
 			acquire();
 		}
 
 		~DataWrite() {
 			if (rwl) {
 				rwl->write_unlock();
-				WARN_PRINT(("Releasing data WRITE lock in thread ID " + itos(Thread::get_caller_id())).utf8().get_data());
+				// WARN_PRINT(("Releasing data WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -332,18 +339,7 @@ struct DescriptorInfo {
 		memdelete(data_lock);
 	}
 
-	Variant to_variant(const CacheInfoTable &p);
-};
-
-struct CacheInfoTable {
-	Vector<page_id> pages;
-	Vector<Frame *> frames;
-	Set<page_id> pages_by_cache_policy[3];
-	Map<page_id, frame_id> page_frame_map;
-	uint8_t *memory_region = NULL;
-	size_t available_space;
-	size_t used_space;
-	size_t total_space;
+	Variant to_variant(const FileCacheManager &p);
 };
 
 #endif // !CACHE_INFO_TABLE_H
