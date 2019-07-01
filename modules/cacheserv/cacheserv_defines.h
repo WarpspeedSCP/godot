@@ -32,13 +32,13 @@
 #define CACHESERV_DEFINES_H
 
 #define CS_PAGE_SIZE 0x1000
-#define CS_CACHE_SIZE (size_t)(CS_PAGE_SIZE * 24)
+#define CS_CACHE_SIZE (size_t)(CS_PAGE_SIZE * 12)
 #define CS_MEM_VAL_BAD (size_t) ~0
 #define CS_NUM_FRAMES CS_CACHE_SIZE/CS_PAGE_SIZE
 #define CS_MIN(a, b) a < b ? a : b
-#define CS_READ_AHEAD_DEFAULT 8
+#define CS_FIFO_THRESH_DEFAULT 8
 #define CS_LRU_THRESH_DEFAULT 8
-#define CS_N_MAX_KEEP_DEFAULT 8
+#define CS_KEEP_THRESH_DEFAULT 8
 #define CS_LEN_UNSPECIFIED 0xFADEFADEFADEFADE
 
 #define STRINGIFY2(X) #X
@@ -49,6 +49,7 @@
 
 // Extract offset from GUID by masking the range.
 #define CS_GET_FILE_OFFSET_FROM_GUID(guid) ((guid) & 0x000000FFFFFFFFFF)
+#define CS_GET_GUID_FROM_FILE_OFFSET(offset, guid_prefix) ((guid_prefix) | offset);
 
 // Round off to the previous page offset.
 #define CS_GET_PAGE(a) ((a) - CS_PARTIAL_SIZE(a))
