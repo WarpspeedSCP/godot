@@ -34,13 +34,13 @@
 #include "core/error_macros.h"
 #include "core/math/random_number_generator.h"
 #include "core/object.h"
+#include "core/ordered_hash_map.h"
 #include "core/os/mutex.h"
 #include "core/os/thread.h"
 #include "core/rid.h"
 #include "core/set.h"
 #include "core/variant.h"
 #include "core/vector.h"
-#include "core/ordered_hash_map.h"
 
 #include "cache_info_table.h"
 #include "cacheserv_defines.h"
@@ -62,6 +62,23 @@
  *  This lets us distinguish between pages associated with different data sources.
  */
 
+// Get the GUID of the current offset.
+// We can either get the GUID associated with an offset for the pageicular data source,
+// or query whether a page with that GUID is currently tracked.
+//
+// Returns-
+// The GUID, if we are not making a query, or if the page at this offset is already tracked.
+// CS_MEM_VAL_BAD if we are making a query and the current page is not tracked.
+_FORCE_INLINE_ page_id get_page_guid(const DescriptorInfo *di, size_t offset, bool query) {
+	page_id x = di->guid_prefix | CS_GET_PAGE(offset);
+	if (query && di->pages.find(x) == CS_MEM_VAL_BAD) {
+		return CS_MEM_VAL_BAD;
+	}
+	return x;
+}
+
+struct LRUComparator;
+
 class FileCacheManager : public Object {
 	GDCLASS(FileCacheManager, Object);
 
@@ -70,17 +87,29 @@ class FileCacheManager : public Object {
 	static FileCacheManager *singleton;
 	RandomNumberGenerator rng;
 	bool exit_thread;
-	CacheInfoTable cache_info_table;
 	RID_Owner<CachedResourceHandle> handle_owner;
-	HashMap<uint32_t, DescriptorInfo *> files;
 	CtrlQueue op_queue;
 	Thread *thread, *th2;
 	Mutex *mutex;
 
+public:
+	Vector<Frame *> frames;
+	HashMap<uint32_t, DescriptorInfo *> files;
+	Map<page_id, frame_id> page_frame_map;
+	Set<page_id, LRUComparator> lru_cached_pages;
+	List<page_id> fifo_cached_pages;
+	Set<page_id, LRUComparator> permanent_cached_pages;
+
+	uint8_t *memory_region = NULL;
+	uint64_t step = 0;
+	size_t available_space;
+	size_t used_space;
+	size_t total_space;
+
 private:
 	static void thread_func(void *p_udata);
 
-	data_descriptor add_data_source(RID *rid, FileAccess *data_source);
+	data_descriptor add_data_source(RID *rid, FileAccess *data_source, int cache_policy);
 	void remove_data_source(data_descriptor dd);
 
 	void enforce_cache_policy(DescriptorInfo *desc_info, page_id curr_page);
@@ -92,48 +121,48 @@ private:
 
 	// Returns true if the page at the current offset is already tracked.
 	// Adds the current page to the tracked list, maps it to a frame and returns false if not.
-	bool check_with_page_op(DescriptorInfo *desc_info, size_t offset);
-
-	// Returns true if the page at the current offset is already tracked.
-	// Adds the current page to the tracked list, maps it to a frame and returns false if not.
 	// Also sets the values of the given page and frame id args.
-	bool check_with_page_op_and_update(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame, size_t offset);
-
-	// Get the GUID of the current offset.
-	// We can either get the GUID associated with an offset for the pageicular data source,
-	// or query whether a page with that GUID is currently tracked.
-	//
-	// Returns-
-	// The GUID, if we are not making a query, or if the page at this offset is already tracked.
-	// CS_MEM_VAL_BAD if we are making a query and the current page is not tracked.
-	_FORCE_INLINE_ page_id get_page_guid(const DescriptorInfo &di, size_t offset, bool query) {
-		page_id x = di.guid_prefix | CS_GET_PAGE(offset);
-		if (query && di.pages.find(x) == CS_MEM_VAL_BAD) {
-			return CS_MEM_VAL_BAD;
-		}
-		return x;
-	}
+	bool check_with_page_op(DescriptorInfo *desc_info, size_t offset, page_id *curr_page, frame_id *curr_frame);
 
 protected:
 public:
 
 	enum CachePolicy {
 		KEEP,
-		READ_AHEAD,
-		LRU
+		LRU,
+		FIFO
 	};
 
-	typedef void (*cache_policy_fn)(FileCacheManager *, DescriptorInfo *, size_t);
+	typedef void (FileCacheManager::*replacement_policy_fn)(DescriptorInfo *, page_id *, frame_id *);
+	typedef void (FileCacheManager::*insertion_policy_fn)(page_id);
 
+	void rp_lru(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
+	void rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
+	void rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
 
-	static void cp_lru(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length);
-	static void cp_read_ahead(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length) {  fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
-	static void cp_keep(FileCacheManager *fcm, DescriptorInfo *desc_info, size_t length) {  fcm->rng.randi_range(0, fcm->cache_info_table.pages.size()); }
+	void ip_lru (page_id curr_page) {
+		WARN_PRINT("LRU cached.");
+		lru_cached_pages.insert(curr_page);
+	}
+	void ip_fifo(page_id curr_page) {
+		WARN_PRINT("FIFO cached.");
+		fifo_cached_pages.push_front(curr_page);
+	}
+	void ip_keep(page_id curr_page) {
+		WARN_PRINT("Permanent cached.");
+		permanent_cached_pages.insert(curr_page);
+	}
 
-	cache_policy_fn cache_policies[3] = {
-		&FileCacheManager::cp_lru,
-		&FileCacheManager::cp_read_ahead,
-		&FileCacheManager::cp_keep
+	insertion_policy_fn cache_insertion_policies[3] = {
+		&FileCacheManager::ip_keep,
+		&FileCacheManager::ip_lru,
+		&FileCacheManager::ip_fifo
+	};
+
+	replacement_policy_fn cache_replacement_policies[3] = {
+		&FileCacheManager::rp_keep,
+		&FileCacheManager::rp_lru,
+		&FileCacheManager::rp_fifo
 	};
 
 	FileCacheManager();
@@ -150,7 +179,7 @@ public:
 		Dictionary d;
 		for (List<uint32_t>::Element *i = keys.front(); i; i = i->next()) {
 
-			d[files[i->get()]->internal_data_source->get_path()] = files[i->get()]->to_variant(cache_info_table);
+			d[files[i->get()]->internal_data_source->get_path()] = files[i->get()]->to_variant(*this);
 		}
 
 		return Variant(d);
@@ -187,7 +216,7 @@ public:
 	// Error reopen(const String &p_path, int p_mode_flags); ///< does not change the AccessType
 
 	// Returns an RID to an opened file.
-	RID open(const String &path, int p_mode);
+	RID open(const String &path, int p_mode, int cache_policy);
 
 	// Close the file but keep its contents in the cache. None of the state information is invalidated.
 	void close(const RID *const rid);
@@ -198,18 +227,19 @@ public:
 	Error reopen(const RID *const rid, int mode);
 
 	// Expects that the page at the given offset is in the cache.
-	void enqueue_load(DescriptorInfo *desc_info, size_t offset) {
-		op_queue.push(CtrlOp(desc_info, offset, CtrlOp::LOAD));
+	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
+		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
 	}
 
 	// Expects that the page at the given offset is in the cache.
-	void enqueue_store(DescriptorInfo *desc_info, size_t offset) {
-		op_queue.push(CtrlOp(desc_info, offset, CtrlOp::STORE));
+	void enqueue_store(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
+		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::STORE));
 	}
 
 	void lock();
 	void unlock();
 };
+
 
 class _FileCacheManager : public Object {
 	GDCLASS(_FileCacheManager, Object);
@@ -220,13 +250,46 @@ class _FileCacheManager : public Object {
 protected:
 	static void _bind_methods() {
 		ClassDB::bind_method(D_METHOD("get_state"), &_FileCacheManager::get_state);
+		BIND_ENUM_CONSTANT(KEEP);
+		BIND_ENUM_CONSTANT(LRU);
+		BIND_ENUM_CONSTANT(FIFO);
 	}
 
 public:
+
+	enum CachePolicy {
+		KEEP,
+		LRU,
+		FIFO
+	};
+
 	_FileCacheManager();
 	static FileCacheManager *get_sss() { return FileCacheManager::get_singleton(); }
 	static _FileCacheManager *get_singleton();
 	Variant get_state() { return FileCacheManager::get_singleton()->_get_state(); }
+};
+
+VARIANT_ENUM_CAST(_FileCacheManager::CachePolicy);
+
+struct LRUComparator {
+	const FileCacheManager *const fcm;
+	LRUComparator () : fcm(_FileCacheManager::get_sss()) {}
+	_FORCE_INLINE_ bool operator()(page_id p1, page_id p2) {
+		size_t a = Frame::MetaRead(
+			fcm->frames.operator[](fcm->page_frame_map[p1]),
+			fcm->files.operator[]((data_descriptor)(p1 >> 40))->meta_lock
+		).get_last_use();
+
+		size_t b = Frame::MetaRead(
+			fcm->frames.operator[](fcm->page_frame_map[p2]),
+			fcm->files.operator[]((data_descriptor)(p2 >> 40))->meta_lock
+		).get_last_use();
+		bool x = a > b;
+
+		// WARN_PRINT((itoh(p1) + (x ? " is older than " : " is younger than ") + itoh(p2)).utf8().get_data());
+		// WARN_PRINT(("age of p1: " + itoh(a) + " age of p2: " + itoh(b)).utf8().get_data());
+		return x;
+	}
 };
 
 #endif // !FILE_CACHE_MANAGER_H
