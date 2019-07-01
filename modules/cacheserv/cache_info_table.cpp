@@ -10,13 +10,13 @@ DescriptorInfo::DescriptorInfo(FileAccess *fa, page_id new_range, int cache_poli
 	internal_data_source = fa;
 	switch (cache_policy) {
 		case FileCacheManager::KEEP:
-			max_pages = CS_N_MAX_KEEP_DEFAULT;
+			max_pages = CS_KEEP_THRESH_DEFAULT;
 			break;
 		case FileCacheManager::LRU:
 			max_pages = CS_LRU_THRESH_DEFAULT;
 			break;
-		case FileCacheManager::READ_AHEAD:
-			max_pages = CS_READ_AHEAD_DEFAULT;
+		case FileCacheManager::FIFO:
+			max_pages = CS_FIFO_THRESH_DEFAULT;
 			break;
 	}
 	total_size = internal_data_source->get_len();
@@ -26,19 +26,21 @@ DescriptorInfo::DescriptorInfo(FileAccess *fa, page_id new_range, int cache_poli
 	data_lock = RWLock::create();
 }
 
-Variant DescriptorInfo::to_variant(const CacheInfoTable &p) {
+Variant DescriptorInfo::to_variant(const FileCacheManager &p) {
 
 	Dictionary d;
 
 	for(int i = 0; i < pages.size(); ++i) {
-		d[itos(pages[i])] = (p.frames[p.page_frame_map[pages[i]]]->to_variant());
+		d[itoh(pages[i])] = (p.frames[p.page_frame_map[pages[i]]]->to_variant());
 	}
 
 	Dictionary out;
-	out["offset"] = Variant(offset);
-	out["total_size"] = Variant(total_size);
-	out["guid_prefix"] = Variant(guid_prefix);
+	out["offset"] = Variant(itoh(offset));
+	out["total_size"] = Variant(itoh(total_size));
+	out["guid_prefix"] = Variant(itoh(guid_prefix));
 	out["pages"] = Variant(d);
+	out["cache_policy"] = Variant(cache_policy);
+
 
 	return Variant(out);
 
