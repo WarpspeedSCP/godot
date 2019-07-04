@@ -573,21 +573,18 @@ bool FileCacheManager::eof_reached(const RID *const rid) const {
 void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
-	// page_id curr_page = CS_MEM_VAL_BAD;
-	// frame_id curr_frame = CS_MEM_VAL_BAD;
 
-	if (lru_cached_pages.size() > 2) {
+	if (lru_cached_pages.size() > CS_LRU_THRESH_DEFAULT) {
 		Frame *f = frames.operator[](page_frame_map.operator[](lru_cached_pages.back()->get()));
 		DescriptorInfo *d = files.operator[](lru_cached_pages.back()->get() >> 40);
-		if (step - Frame::MetaRead(f, d->meta_lock).get_last_use() > CS_LRU_THRESH_DEFAULT) {
-			page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : lru_cached_pages.back()->prev()->get();
-			lru_cached_pages.erase(page_to_evict);
-			frame_to_evict = page_frame_map[page_to_evict];
-			page_frame_map.erase(page_to_evict);
-			// pages.erase(page_to_evict);
 
-			// get the guid prefix and shift it to lsb to get the RID key.
-			files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
+		if (step - Frame::MetaRead(f, d->meta_lock).get_last_use() > CS_LRU_THRESH_DEFAULT) {
+
+			page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : lru_cached_pages.back()->prev()->get();
+
+			lru_cached_pages.erase(page_to_evict);
+
+			frame_to_evict = page_frame_map[page_to_evict];
 
 			WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
 			{
@@ -603,16 +600,13 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 
 			ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
 
-			page_frame_map.insert(*curr_page, *curr_frame);
-			lru_cached_pages.insert(*curr_page);
+		} else if (fifo_cached_pages.size() > CS_FIFO_THRESH_DEFAULT / 2) {
 
-		} else if (fifo_cached_pages.size() > 2) {
 			page_to_evict = fifo_cached_pages.back()->get();
+
 			fifo_cached_pages.erase(fifo_cached_pages.back());
 
 			frame_to_evict = page_frame_map[page_to_evict];
-			// get the guid prefix and shift it to lsb to get the RID key.
-			files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
 
 			WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
 			{
@@ -627,17 +621,13 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 
 			ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
 
-			page_frame_map.insert(*curr_page, *curr_frame);
-			lru_cached_pages.insert(*curr_page);
-		} else if (lru_cached_pages.size() > 2) {
+		} else if (lru_cached_pages.size()) {
+
 			page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : lru_cached_pages.back()->prev()->get();
-			lru_cached_pages.erase(page_to_evict);
-			frame_to_evict = page_frame_map[page_to_evict];
-			page_frame_map.erase(page_to_evict);
-			// pages.erase(page_to_evict);
 
-			// get the guid prefix and shift it to lsb to get the RID key.
-			files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
+			lru_cached_pages.erase(page_to_evict);
+
+			frame_to_evict = page_frame_map[page_to_evict];
 
 			WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
 			{
@@ -653,27 +643,31 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 
 			ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
 
-			page_frame_map.insert(*curr_page, *curr_frame);
-			lru_cached_pages.insert(*curr_page);
 		} else
 			CRASH_NOW();
 	}
+
+	WARN_PRINTS("evicted page under LRU " + itoh(page_to_evict));
+	// get the guid prefix and shift it to lsb to get the RID key.
+	files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
+	page_frame_map.erase(page_to_evict);
+	page_frame_map.insert(*curr_page, *curr_frame);
+	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
+	(*curr_page);
 }
 
 void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
-	// page_id curr_page = CS_MEM_VAL_BAD;
-	// frame_id curr_frame = CS_MEM_VAL_BAD;
 
-	if (fifo_cached_pages.size() > 1) {
+	if (fifo_cached_pages.size() > CS_FIFO_THRESH_DEFAULT / 2) {
+
 		page_to_evict = fifo_cached_pages.back()->get();
+
 		fifo_cached_pages.erase(fifo_cached_pages.back());
 
 		frame_to_evict = page_frame_map[page_to_evict];
-		// get the guid prefix and shift it to lsb to get the RID key.
-		files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
-		WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
+
 		{
 			Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
 			if (w.get_dirty()) {
@@ -687,25 +681,21 @@ void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, fr
 
 		ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
 
-		page_frame_map.insert(*curr_page, *curr_frame);
-		permanent_cached_pages.insert(*curr_page);
 	} else {
 
-		if (lru_cached_pages.size() > 2) {
+		if (lru_cached_pages.size() > CS_LRU_THRESH_DEFAULT / 2) {
+
 			Frame *f = frames.operator[](page_frame_map.operator[](lru_cached_pages.back()->get()));
 			DescriptorInfo *d = files.operator[](lru_cached_pages.back()->get() >> 40);
+
 			if (step - Frame::MetaRead(f, d->meta_lock).get_last_use() > CS_LRU_THRESH_DEFAULT) {
+
 				page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : permanent_cached_pages.back()->prev()->get();
+
 				lru_cached_pages.erase(page_to_evict);
 
 				frame_to_evict = page_frame_map[page_to_evict];
-				page_frame_map.erase(page_to_evict);
-				// pages.erase(page_to_evict);
 
-				// get the guid prefix and shift it to lsb to get the RID key.
-				files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
-
-				WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
 				{
 					Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
 					if (w.get_dirty()) {
@@ -718,20 +708,15 @@ void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, fr
 				*curr_frame = frame_to_evict;
 
 				ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
-
-				page_frame_map.insert(*curr_page, *curr_frame);
-				permanent_cached_pages.insert(*curr_page);
 			}
-		} else if (permanent_cached_pages.size() > 2) {
+		} else if (permanent_cached_pages.size() > CS_KEEP_THRESH_DEFAULT / 2) {
 
 			page_to_evict = (rng.randi() % 2) ? permanent_cached_pages.back()->get() : permanent_cached_pages.back()->prev()->get();
+
 			permanent_cached_pages.erase(page_to_evict);
 
 			frame_to_evict = page_frame_map[page_to_evict];
-			// get the guid prefix and shift it to lsb to get the RID key.
-			files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
 
-			WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
 			{
 				Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
 				if (w.get_dirty()) {
@@ -744,29 +729,31 @@ void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, fr
 			*curr_frame = frame_to_evict;
 
 			ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
-
-			page_frame_map.insert(*curr_page, *curr_frame);
-			permanent_cached_pages.insert(*curr_page);
 		}
 	}
+
+	WARN_PRINTS("evicted page under KEEP " + itoh(page_to_evict));
+	// get the guid prefix and shift it to lsb to get the RID key.
+	files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
+	page_frame_map.erase(page_to_evict);
+	page_frame_map.insert(*curr_page, *curr_frame);
+	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
+	(*curr_page);
 }
 
 void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
 
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
-	// page_id curr_page = CS_MEM_VAL_BAD;
-	// frame_id curr_frame = CS_MEM_VAL_BAD;
 
-	if (fifo_cached_pages.size() > 1) {
+	if (fifo_cached_pages.size()) {
+
 		page_to_evict = fifo_cached_pages.back()->get();
+
 		fifo_cached_pages.back()->erase();
 
 		frame_to_evict = page_frame_map[page_to_evict];
-		// get the guid prefix and shift it to lsb to get the RID key.
-		files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
 
-		WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
 		{
 			Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
 			if (w.get_dirty()) {
@@ -779,23 +766,20 @@ void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, fr
 
 		ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
 
-		page_frame_map.insert(*curr_page, *curr_frame);
-		fifo_cached_pages.push_front(*curr_page);
 	} else {
-		if (lru_cached_pages.size()) {
+		if (lru_cached_pages.size() > CS_LRU_THRESH_DEFAULT / 2) {
+
 			Frame *f = frames.operator[](page_frame_map.operator[](lru_cached_pages.back()->get()));
 			DescriptorInfo *d = files.operator[](lru_cached_pages.back()->get() >> 40);
+
 			if (step - Frame::MetaRead(f, d->meta_lock).get_last_use() > CS_LRU_THRESH_DEFAULT) {
+
 				page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : lru_cached_pages.back()->prev()->get();
+
 				lru_cached_pages.erase(page_to_evict);
+
 				frame_to_evict = page_frame_map[page_to_evict];
-				page_frame_map.erase(page_to_evict);
-				// pages.erase(page_to_evict);
 
-				// get the guid prefix and shift it to lsb to get the RID key.
-				files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
-
-				WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
 				{
 					Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
 					if (w.get_dirty()) {
@@ -808,12 +792,17 @@ void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, fr
 				*curr_frame = frame_to_evict;
 
 				ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
-
-				page_frame_map.insert(*curr_page, *curr_frame);
-				fifo_cached_pages.push_front(*curr_page);
 			}
 		}
 	}
+
+	WARN_PRINTS("evicted page under FIFO " + itoh(page_to_evict));
+	// get the guid prefix and shift it to lsb to get the RID key.
+	files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
+	page_frame_map.erase(page_to_evict);
+	page_frame_map.insert(*curr_page, *curr_frame);
+	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
+	(*curr_page);
 }
 
 bool FileCacheManager::check_with_page_op(DescriptorInfo *desc_info, size_t offset, page_id *curr_page, frame_id *curr_frame) {
