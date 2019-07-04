@@ -36,11 +36,12 @@ class CtrlQueue {
 
 private:
 	List<CtrlOp> queue;
-	Mutex *mutex;
+	Mutex *client_mut;
+	Mutex *server_mut;
 	Semaphore *sem;
 
 	CtrlOp pop() {
-
+		MutexLock ml(server_mut);
 		while(queue.empty()) {
 			sem->wait();
 		}
@@ -53,34 +54,39 @@ private:
 		return l;
 	}
 
-	CtrlOp try_pop() {
-		if(queue.empty()) {
-			return CtrlOp();
-		}
+	void lock() { server_mut->lock(); }
+	void unlock() { server_mut->unlock(); }
 
-		CtrlOp l = queue.front()->get();
-		queue.pop_front();
+	// CtrlOp try_pop() {
+	// 	if(queue.empty()) {
+	// 		return CtrlOp();
+	// 	}
 
-		return l;
-	}
+	// 	CtrlOp l = queue.front()->get();
+	// 	queue.pop_front();
+
+	// 	return l;
+	// }
 
 public:
 
 	bool sig_quit;
 
 	CtrlQueue() {
-		mutex = Mutex::create();
+		client_mut = Mutex::create();
+		server_mut = Mutex::create();
 		sem = Semaphore::create();
 		sig_quit = false;
 	}
 
 	~CtrlQueue() {
-		memdelete(mutex);
+		memdelete(client_mut);
+		memdelete(server_mut);
 		memdelete(sem);
 	}
 
 	void push(CtrlOp l) {
-		MutexLock ml = MutexLock(mutex);
+		MutexLock ml = MutexLock(client_mut);
 			queue.push_back(l);
 			sem->post();
 	}
