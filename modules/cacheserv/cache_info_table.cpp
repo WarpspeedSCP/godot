@@ -9,13 +9,13 @@ DescriptorInfo::DescriptorInfo(FileAccess *fa, page_id new_range, int cache_poli
 	ERR_FAIL_COND(!fa);
 	internal_data_source = fa;
 	switch (cache_policy) {
-		case FileCacheManager::KEEP:
+		case _FileCacheManager::KEEP:
 			max_pages = CS_KEEP_THRESH_DEFAULT;
 			break;
-		case FileCacheManager::LRU:
+		case _FileCacheManager::LRU:
 			max_pages = CS_LRU_THRESH_DEFAULT;
 			break;
-		case FileCacheManager::FIFO:
+		case _FileCacheManager::FIFO:
 			max_pages = CS_FIFO_THRESH_DEFAULT;
 			break;
 	}
@@ -31,7 +31,7 @@ Variant DescriptorInfo::to_variant(const FileCacheManager &p) {
 	Dictionary d;
 
 	for(int i = 0; i < pages.size(); ++i) {
-		d[itoh(pages[i])] = (p.frames[p.page_frame_map[pages[i]]]->to_variant());
+		d[itoh(pages[i]) + " # " + itoh(p.page_frame_map[pages[i]])] = (p.frames[p.page_frame_map[pages[i]]]->to_variant());
 	}
 
 	Dictionary out;
