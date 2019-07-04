@@ -122,23 +122,34 @@ private:
 	// Returns true if the page at the current offset is already tracked.
 	// Adds the current page to the tracked list, maps it to a frame and returns false if not.
 	// Also sets the values of the given page and frame id args.
-	bool check_with_page_op(DescriptorInfo *desc_info, size_t offset, page_id *curr_page, frame_id *curr_frame);
+	bool get_or_do_page_op(DescriptorInfo *desc_info, size_t offset, page_id *curr_page, frame_id *curr_frame);
 
 protected:
 public:
 
-	enum CachePolicy {
-		KEEP,
-		LRU,
-		FIFO
-	};
-
-	typedef void (FileCacheManager::*replacement_policy_fn)(DescriptorInfo *, page_id *, frame_id *);
 	typedef void (FileCacheManager::*insertion_policy_fn)(page_id);
+	typedef void (FileCacheManager::*replacement_policy_fn)(DescriptorInfo *, page_id *, frame_id *);
+	typedef void (FileCacheManager::*update_policy_fn)(page_id);
+	typedef void (FileCacheManager::*removal_policy_fn)(page_id);
 
 	void rp_lru(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
 	void rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
 	void rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
+
+	void rmp_lru(page_id curr_page) {
+		WARN_PRINTS("Removing LRU page " + itoh(curr_page));
+		lru_cached_pages.erase(curr_page);
+	}
+
+	void rmp_fifo(page_id curr_page) {
+		WARN_PRINTS("Removing FIFO page " + itoh(curr_page));
+		fifo_cached_pages.erase(curr_page);
+	}
+
+	void rmp_keep(page_id curr_page) {
+		WARN_PRINTS("Removing permanent page " + itoh(curr_page));
+		permanent_cached_pages.erase(curr_page);
+	}
 
 	void ip_lru (page_id curr_page) {
 		WARN_PRINT("LRU cached.");
@@ -153,6 +164,23 @@ public:
 		permanent_cached_pages.insert(curr_page);
 	}
 
+	void up_lru (page_id curr_page) {
+		WARN_PRINT(("Updating LRU page " + itoh(curr_page)).utf8().get_data());
+		lru_cached_pages.erase(curr_page);
+		Frame::MetaWrite(frames[page_frame_map[curr_page]], files[curr_page >> 40]->meta_lock).set_last_use(step);
+		lru_cached_pages.insert(curr_page);
+	}
+	void up_fifo(page_id curr_page) {
+		WARN_PRINT(("Updating FIFO page " + itoh(curr_page)).utf8().get_data());
+	}
+	void up_keep(page_id curr_page) {
+		WARN_PRINT(("Updating Permanent page " + itoh(curr_page)).utf8().get_data());
+		permanent_cached_pages.erase(curr_page);
+		Frame::MetaWrite(frames[page_frame_map[curr_page]], files[curr_page >> 40]->meta_lock).set_last_use(step);
+		permanent_cached_pages.insert(curr_page);
+	}
+
+
 	insertion_policy_fn cache_insertion_policies[3] = {
 		&FileCacheManager::ip_keep,
 		&FileCacheManager::ip_lru,
@@ -163,6 +191,18 @@ public:
 		&FileCacheManager::rp_keep,
 		&FileCacheManager::rp_lru,
 		&FileCacheManager::rp_fifo
+	};
+
+	update_policy_fn cache_update_policies[3] = {
+		&FileCacheManager::up_keep,
+		&FileCacheManager::up_lru,
+		&FileCacheManager::up_fifo
+	};
+
+	removal_policy_fn cache_removal_policies[3] = {
+		&FileCacheManager::rmp_keep,
+		&FileCacheManager::rmp_lru,
+		&FileCacheManager::rmp_fifo
 	};
 
 	FileCacheManager();
@@ -228,6 +268,7 @@ public:
 
 	// Expects that the page at the given offset is in the cache.
 	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
+		WARN_PRINTS("Enqueueing load for file " + desc_info->abs_path  + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
 		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
 	}
 
