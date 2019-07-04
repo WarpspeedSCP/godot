@@ -32,7 +32,7 @@
 #define CACHESERV_DEFINES_H
 
 #define CS_PAGE_SIZE 0x1000
-#define CS_CACHE_SIZE (size_t)(CS_PAGE_SIZE * 12)
+#define CS_CACHE_SIZE (size_t)(CS_PAGE_SIZE * 16)
 #define CS_MEM_VAL_BAD (size_t) ~0
 #define CS_NUM_FRAMES CS_CACHE_SIZE/CS_PAGE_SIZE
 #define CS_MIN(a, b) a < b ? a : b
@@ -53,6 +53,8 @@
 
 // Round off to the previous page offset.
 #define CS_GET_PAGE(a) ((a) - CS_PARTIAL_SIZE(a))
+
+#define CS_GET_CACHE_POLICY_FN(fns, policy) (this->*(fns[policy]))
 
 #define CS_GET_LENGTH_IN_PAGES(length) (((length) / CS_PAGE_SIZE) + CS_PARTIAL_SIZE(length))
 
