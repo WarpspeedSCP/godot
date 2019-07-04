@@ -473,13 +473,42 @@ size_t FileCacheManager::seek(const RID *const rid, size_t new_offset, int mode)
 		// 		WARN_PRINT(("Checked page " + itoh(CS_GET_PAGE(eff_offset + i * CS_PAGE_SIZE))).utf8().get_data());
 		// 	}
 
-		// } else {
-		// 	for (int i = 0; i < CS_SEEK_READ_AHEAD_SIZE; i++) {
-		// 		check_with_page_op_and_update(desc_info, &curr_page, &curr_frame, eff_offset + i * CS_PAGE_SIZE);
-		// 		enqueue_load(desc_info, curr_page);
-		// 		WARN_PRINT(("Checked and enqueued load of page " + itoh(CS_GET_PAGE(eff_offset + i * CS_PAGE_SIZE))).utf8().get_data());
-		// 	}
-		// }
+		if (eff_offset - curr_offset > CS_FIFO_THRESH_DEFAULT) {
+			/** when the user seeks far away from the current offset,
+			 * if the io queue currently has pending operations, maybe
+			 * we can clear the queue. That way, we can read ahead at the
+			 * new offset without any waits, and we only need to do an inexpensive page_id replacement operation instead of waiting for a load to occur.
+			*/
+			CtrlOp l;
+			// This executes on the main thread.
+			// Lock the operation queue to prevent the remaining pages from loading.
+			if (!op_queue.queue.empty()) {
+				op_queue.lock();
+				while (!op_queue.queue.empty()) {
+					WARN_PRINT("Acquired client side queue lock.");
+					// If the next operation is  a load op, we can remove it from the op queue.
+					if (op_queue.queue.front()->get().type == CtrlOp::LOAD)
+						l = op_queue.pop();
+					else {
+						// If the next operation is a store op, we must allow the IO thread to perform the operation.
+						op_queue.unlock();
+						// Hopefully this will allow the IO thread to acquire the lock before the statement below is executed.
+						op_queue.lock();
+						// At this point, the IO thread should have popped the store op off the queue.
+						// We can now continue to the next iteration.
+						continue;
+					}
+					WARN_PRINTS("Unmapping page " + itoh(CS_GET_PAGE(l.offset)) + " and frame " + itoh(l.frame));
+					l.di->pages.erase(CS_GET_PAGE(l.offset));
+					page_frame_map.erase(CS_GET_PAGE(l.offset));
+					CS_GET_CACHE_POLICY_FN(cache_removal_policies, desc_info->cache_policy)
+					(desc_info->guid_prefix | CS_GET_PAGE(l.offset));
+					Frame::MetaWrite(frames[l.frame], l.di->meta_lock).set_used(false).set_ready_false();
+				}
+				WARN_PRINT("Released client side queue lock.");
+				op_queue.unlock();
+			}
+		}
 
 		// Update the offset.
 
