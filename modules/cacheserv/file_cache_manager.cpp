@@ -256,7 +256,6 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 						(uint8_t *)buffer + buffer_offset,
 						r.ptr() + CS_PARTIAL_SIZE(initial_start_offset), //CLAMP(, CS_GET_PAGE(initial_start_offset), Frame::MetaRead(frames[curr_frame], desc_info->meta_lock).get_last_use()),
 						initial_end_offset - initial_start_offset);
-				memcpy((uint8_t *)buffer + buffer_offset, "\n\nfirst page.\n\n", 15);
 			}
 
 			buffer_offset += (initial_end_offset - initial_start_offset);
@@ -282,14 +281,13 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 						(uint8_t *)buffer + buffer_offset,
 						r.ptr(),
 						CS_PAGE_SIZE);
-				memcpy((uint8_t *)buffer + buffer_offset, "\n\nMiddle page.\n\n", 16);
 			}
 
 			buffer_offset += CS_PAGE_SIZE;
 			read_length -= CS_PAGE_SIZE;
 		}
 
-		// For final potentially pageially filled page
+		// For final potentially partially filled page
 		if (read_length) {
 
 			// Query for the page with the current offset.
@@ -309,7 +307,6 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 						(uint8_t *)buffer + buffer_offset,
 						r.ptr(),
 						temp_read_len);
-				memcpy((uint8_t *)buffer + buffer_offset, "\n\nLast page.\n\n", 14);
 			}
 			buffer_offset += temp_read_len;
 			read_length -= temp_read_len;
@@ -399,7 +396,7 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 			data_offset += CS_PAGE_SIZE;
 		}
 
-		// For final potentially pageially filled page
+		// For final potentially partially filled page
 		if (initial_end_offset == CS_PAGE_SIZE && final_partial_length) {
 
 			// Query for the page with the current offset.

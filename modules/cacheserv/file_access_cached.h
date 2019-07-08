@@ -135,6 +135,10 @@ public:
 	virtual int get_buffer(uint8_t *p_dst, int p_length) const {
 		int o_length = 0;
 		WARN_PRINTS("Initial offset: " + itoh(cache_mgr->get_len(&cached_file)));
+
+		// Read 4 pages of data at a time. This is so that it will always be
+		// possible to have pages of a file present in the cache without worrying
+		// about not being able to add new pages to the cache or reading from invalid pages.
 		for(int i = 0; i < p_length - (p_length % (CS_PAGE_SIZE * 4)); i += CS_PAGE_SIZE * 4) {
 			WARN_PRINTS("curr length: " + itoh(i))
 			cache_mgr->check_cache(&cached_file, CS_PAGE_SIZE * 4);
