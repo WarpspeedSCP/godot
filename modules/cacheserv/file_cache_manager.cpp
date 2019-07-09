@@ -140,14 +140,13 @@ void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, 
 	if ((offset + CS_PAGE_SIZE) < desc_info->total_size) {
 		if (check_incomplete_page_load(desc_info, curr_page, curr_frame, offset))
 			// { _err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Read less than " "0x1000" " bytes."); _err_error_exists = false; }
-			ERR_PRINT("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.")
+			ERR_PRINTS("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.")
 		else {
-			ERR_PRINT(("Read size : " + itoh(frames[curr_frame]->used_size)).utf8().get_data());
+			ERR_PRINTS("Read size : " + itoh(frames[curr_frame]->used_size));
 		}
 	} else {
 		check_incomplete_page_load(desc_info, curr_page, curr_frame, offset);
-		ERR_PRINT(("Read " + itoh(frames[curr_frame]->used_size) + " bytes at end of file.").utf8().get_data());
-		// printf("do_load_op : loaded 0x%lx bytes\n", this->frames[curr_frame]->used_size);
+		ERR_PRINTS("Read " + itoh(frames[curr_frame]->used_size) + " bytes at end of file.");
 	}
 }
 
@@ -156,9 +155,9 @@ void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page,
 	// store back to data source somehow...
 
 	if (check_incomplete_page_store(desc_info, curr_page, curr_frame, offset)) {
-		ERR_PRINT("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.")
+		ERR_PRINTS("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.")
 	} else {
-		// ERR_PRINT(("" + itoh()).utf8().get_data());
+		ERR_PRINT("Read a page");
 	}
 }
 
@@ -180,10 +179,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 		s = String((char *)w.ptr()) + " ";
 		Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_used_size(used_size).set_ready_true(desc_info->sem);
 	}
-
-	s.resize(used_size % 100);
-	// WARN_PRINT(("First 100 or less bytes: " + s).utf8().get_data());
-	ERR_PRINT(("Loaded " + itoh(used_size) + " from offset " + itoh(offset) + " with page " + itoh(curr_page) + " mapped to frame " + itoh(curr_frame)).utf8().get_data())
+	ERR_PRINTS("Loaded " + itoh(used_size) + " from offset " + itoh(offset) + " with page " + itoh(curr_page) + " mapped to frame " + itoh(curr_frame))
 	return (used_size < CS_PAGE_SIZE);
 }
 
@@ -220,7 +216,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 		size_t read_length = length;
 
 		if ((desc_info->offset + read_length) / desc_info->total_size > 0) {
-			WARN_PRINT(("Reached EOF before reading " + itoh(read_length) + " bytes.").utf8().get_data());
+			WARN_PRINTS("Reached EOF before reading " + itoh(read_length) + " bytes.");
 			read_length = desc_info->total_size - desc_info->offset;
 		}
 
@@ -578,7 +574,7 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 
 			frame_to_evict = page_frame_map[page_to_evict];
 
-			WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
+			WARN_PRINTS("evicted page " + itoh(page_to_evict));
 			{
 				Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
 				if (w.get_dirty()) {
@@ -600,7 +596,7 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 
 			frame_to_evict = page_frame_map[page_to_evict];
 
-			WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
+			WARN_PRINTS("evicted page " + itoh(page_to_evict));
 			{
 				Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
 				if (w.get_dirty()) {
@@ -621,7 +617,7 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 
 			frame_to_evict = page_frame_map[page_to_evict];
 
-			WARN_PRINT(("evicted page " + itoh(page_to_evict)).utf8().get_data());
+			WARN_PRINTS("evicted page " + itoh(page_to_evict));
 			{
 				Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
 				if (w.get_dirty()) {
@@ -964,7 +960,7 @@ void FileCacheManager::check_cache(const RID *const rid, size_t length) {
 	if (length == CS_LEN_UNSPECIFIED) length = 8 * CS_PAGE_SIZE;
 
 	for (int i = desc_info->offset; i < desc_info->offset + length; i += CS_PAGE_SIZE) {
-		WARN_PRINT(("curr offset: " + itoh(i) + "").utf8().get_data());
+		WARN_PRINTS("curr offset: " + itoh(i) + "");
 		if (!get_or_do_page_op(desc_info, i, NULL, NULL)) {
 			enqueue_load(desc_info, page_frame_map[desc_info->guid_prefix | CS_GET_PAGE(i)], i);
 		}
