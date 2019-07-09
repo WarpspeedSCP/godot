@@ -216,8 +216,17 @@ public:
 			return alloc->dirty;
 		}
 
-		_FORCE_INLINE_ MetaWrite &set_dirty(bool in) {
-			alloc->dirty = in;
+		_FORCE_INLINE_ MetaWrite &set_dirty_true(Semaphore *dirty_sem) {
+			alloc->dirty = true;
+			WARN_PRINT("Dirty page written to disk.");
+			dirty_sem->post();
+			return *this;
+		}
+
+		_FORCE_INLINE_ MetaWrite &set_dirty_false(Semaphore *dirty_sem) {
+			alloc->dirty = false;
+			WARN_PRINT("Dirty page written to disk.");
+			dirty_sem->post();
 			return *this;
 		}
 
@@ -301,10 +310,10 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		DataWrite(Frame *const p_alloc, Semaphore *ready_sem, RWLock *data_lock) :
+		DataWrite(Frame *const p_alloc, Semaphore *dirty_sem, RWLock *data_lock) :
 				rwl(data_lock),
 				mem(p_alloc->memory_region) {
-			while ( p_alloc->dirty ) ready_sem->wait();
+			while ( p_alloc->dirty ) dirty_sem->wait();
 			acquire();
 		}
 
