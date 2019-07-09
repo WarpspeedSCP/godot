@@ -126,7 +126,6 @@ private:
 
 protected:
 public:
-
 	typedef void (FileCacheManager::*insertion_policy_fn)(page_id);
 	typedef void (FileCacheManager::*replacement_policy_fn)(DescriptorInfo *, page_id *, frame_id *);
 	typedef void (FileCacheManager::*update_policy_fn)(page_id);
@@ -151,7 +150,7 @@ public:
 		permanent_cached_pages.erase(curr_page);
 	}
 
-	void ip_lru (page_id curr_page) {
+	void ip_lru(page_id curr_page) {
 		WARN_PRINT("LRU cached.");
 		lru_cached_pages.insert(curr_page);
 	}
@@ -164,7 +163,7 @@ public:
 		permanent_cached_pages.insert(curr_page);
 	}
 
-	void up_lru (page_id curr_page) {
+	void up_lru(page_id curr_page) {
 		WARN_PRINT(("Updating LRU page " + itoh(curr_page)).utf8().get_data());
 		lru_cached_pages.erase(curr_page);
 		Frame::MetaWrite(frames[page_frame_map[curr_page]], files[curr_page >> 40]->meta_lock).set_last_use(step);
@@ -179,7 +178,6 @@ public:
 		Frame::MetaWrite(frames[page_frame_map[curr_page]], files[curr_page >> 40]->meta_lock).set_last_use(step);
 		permanent_cached_pages.insert(curr_page);
 	}
-
 
 	insertion_policy_fn cache_insertion_policies[3] = {
 		&FileCacheManager::ip_keep,
@@ -268,7 +266,8 @@ public:
 
 	// Expects that the page at the given offset is in the cache.
 	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
-		WARN_PRINTS("Enqueueing load for file " + desc_info->abs_path  + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
+		WARN_PRINTS("Enqueueing load for file " + desc_info->abs_path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
+
 		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
 	}
 
@@ -280,7 +279,6 @@ public:
 	void lock();
 	void unlock();
 };
-
 
 class _FileCacheManager : public Object {
 	GDCLASS(_FileCacheManager, Object);
@@ -297,7 +295,6 @@ protected:
 	}
 
 public:
-
 	enum CachePolicy {
 		KEEP,
 		LRU,
@@ -314,21 +311,20 @@ VARIANT_ENUM_CAST(_FileCacheManager::CachePolicy);
 
 struct LRUComparator {
 	const FileCacheManager *const fcm;
-	LRUComparator () : fcm(_FileCacheManager::get_sss()) {}
+	LRUComparator() :
+			fcm(_FileCacheManager::get_sss()) {}
 	_FORCE_INLINE_ bool operator()(page_id p1, page_id p2) {
 		size_t a = Frame::MetaRead(
-			fcm->frames.operator[](fcm->page_frame_map[p1]),
-			fcm->files.operator[]((data_descriptor)(p1 >> 40))->meta_lock
-		).get_last_use();
+				fcm->frames.operator[](fcm->page_frame_map[p1]),
+				fcm->files.operator[]((data_descriptor)(p1 >> 40))->meta_lock)
+						   .get_last_use();
 
 		size_t b = Frame::MetaRead(
-			fcm->frames.operator[](fcm->page_frame_map[p2]),
-			fcm->files.operator[]((data_descriptor)(p2 >> 40))->meta_lock
-		).get_last_use();
+				fcm->frames.operator[](fcm->page_frame_map[p2]),
+				fcm->files.operator[]((data_descriptor)(p2 >> 40))->meta_lock)
+						   .get_last_use();
 		bool x = a > b;
 
-		// WARN_PRINT((itoh(p1) + (x ? " is older than " : " is younger than ") + itoh(p2)).utf8().get_data());
-		// WARN_PRINT(("age of p1: " + itoh(a) + " age of p2: " + itoh(b)).utf8().get_data());
 		return x;
 	}
 };
