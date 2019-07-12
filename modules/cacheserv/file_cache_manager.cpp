@@ -39,7 +39,7 @@
 
 static const bool CS_TRUE = true;
 static const bool CS_FALSE = true;
-static uint8_t zero[CS_PAGE_SIZE] = {0};
+static uint8_t zero[CS_PAGE_SIZE] = { 0 };
 #define RID_TO_DD(op) (size_t) rid op get_id() & 0x0000000000FFFFFF
 #define RID_PTR_TO_DD RID_TO_DD(->)
 #define RID_REF_TO_DD RID_TO_DD(.)
@@ -91,7 +91,8 @@ FileCacheManager::~FileCacheManager() {
 }
 
 data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_source, int cache_policy) {
-	ERR_FAIL_COND_V(!rid->is_valid(), CS_MEM_VAL_BAD);
+	printf("##############################################################################################\n add_data_source START\n");
+	CRASH_COND(!rid->is_valid());
 	data_descriptor dd = RID_PTR_TO_DD;
 
 	files[dd] = memnew(DescriptorInfo(data_source, (size_t)dd << 40, cache_policy));
@@ -100,9 +101,10 @@ data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_sou
 	for (; key; key = files.next(key)) {
 		printf("\t\t%lx\n", files[*key]);
 	}
-	ERR_FAIL_COND_V(files[dd] == NULL, CS_MEM_VAL_BAD);
+	CRASH_COND(files[dd] == NULL);
 	seek(rid, 0, SEEK_SET);
 	check_cache(rid, (cache_policy == _FileCacheManager::KEEP ? CS_KEEP_THRESH_DEFAULT : cache_policy == _FileCacheManager::LRU ? CS_LRU_THRESH_DEFAULT : CS_FIFO_THRESH_DEFAULT) * CS_PAGE_SIZE);
+	printf(" add_data_source END\n##############################################################################################\n");
 	return dd;
 }
 
@@ -167,23 +169,21 @@ void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page,
 //
 // This operation updates the used_size value of the page holder.
 _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
-	desc_info->internal_data_source->seek(CS_GET_PAGE(offset));
+	desc_info->internal_data_source->seek(CS_GET_FILE_OFFSET_FROM_GUID(curr_page));
 	size_t used_size;
 	{
 		Frame::DataWrite w(
 				frames[curr_frame],
 				desc_info->sem,
-				desc_info->data_lock
-		);
+				desc_info->data_lock);
 		used_size = desc_info->internal_data_source->get_buffer(
-			w.ptr(),
-			CS_PAGE_SIZE
-		);
+				w.ptr(),
+				CS_PAGE_SIZE);
 		Frame::MetaWrite(
-			frames[curr_frame],
-			desc_info->meta_lock
-		).set_used_size(used_size)
-		.set_ready_true(desc_info->sem, curr_page, curr_frame);
+				frames[curr_frame],
+				desc_info->meta_lock)
+				.set_used_size(used_size)
+				.set_ready_true(desc_info->sem, curr_page, curr_frame);
 	}
 	ERR_PRINTS("Loaded " + itoh(used_size) + " from offset " + itoh(offset) + " with page " + itoh(curr_page) + " mapped to frame " + itoh(curr_frame))
 	return (used_size < CS_PAGE_SIZE);
@@ -209,7 +209,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo
 
 // Perform a read operation.
 size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t length) {
-
+	printf("#######################################################################\n read START\n");
 	DescriptorInfo **elem = files.getptr(rid->get_id());
 
 	if (!elem) {
@@ -227,7 +227,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 		}
 
 		size_t initial_start_offset = desc_info->offset;
-		size_t initial_end_offset = initial_start_offset + CS_PAGE_SIZE;
+		size_t initial_end_offset = CS_GET_PAGE(initial_start_offset + CS_PAGE_SIZE);
 		page_id curr_page = CS_MEM_VAL_BAD;
 		frame_id curr_frame = CS_MEM_VAL_BAD;
 		size_t buffer_offset = 0;
@@ -323,8 +323,10 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 
 		// We update the current offset at the end of the operation.
 		desc_info->offset += buffer_offset;
+		printf(" read END\n#######################################################################\n");
 		return buffer_offset;
 	}
+	printf(" read END\n#######################################################################\n");
 }
 
 // Similar to the read operation but opposite data flow.
@@ -348,9 +350,9 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 		// because the data to be copied may not start at a page boundary, and may not end on a page boundary.
 		{
 			// Query for the page with the current offset.
-			ERR_FAIL_COND_V((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
+			CRASH_COND((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
-			ERR_FAIL_COND_V((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
+			CRASH_COND((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD);
 
 			// The end offset of the first page may not be greater than the start offset of the next page.
 			initial_end_offset = CLAMP(initial_start_offset + length, 0, CS_GET_PAGE(initial_start_offset) + CS_PAGE_SIZE);
@@ -378,9 +380,9 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 		while (data_offset < CS_GET_PAGE(length)) {
 
 			// Query for the page with the current offset.
-			ERR_FAIL_COND_V((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
+			CRASH_COND((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
-			ERR_FAIL_COND_V((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
+			CRASH_COND((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD);
 
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info->offset) gives us the start
 			WARN_PRINT("Reading intermediate page.");
@@ -402,9 +404,9 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 		if (initial_end_offset == CS_PAGE_SIZE && final_partial_length) {
 
 			// Query for the page with the current offset.
-			ERR_FAIL_COND_V((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
+			CRASH_COND((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
-			ERR_FAIL_COND_V((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
+			CRASH_COND((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD);
 
 			CRASH_COND(curr_page + final_partial_length > curr_page + CS_PAGE_SIZE);
 
@@ -534,6 +536,7 @@ size_t FileCacheManager::get_len(const RID *const rid) const {
 }
 
 RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
+	printf("#########################################################################################################\n open START\n");
 	printf("%s %d\n", path.utf8().get_data(), p_mode);
 
 	ERR_FAIL_COND_V(!mutex, RID());
@@ -549,6 +552,8 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 	FileAccess *fa = FileAccess::open(path, p_mode);
 	add_data_source(&rid, fa, cache_policy);
 	printf("open file %s with mode %d\nGot RID %d\n", path.utf8().get_data(), p_mode, RID_REF_TO_DD);
+
+	printf(" open END\n######################################################################################################\n");
 	return rid;
 }
 
@@ -568,6 +573,7 @@ bool FileCacheManager::eof_reached(const RID *const rid) const {
  * LRU replacement policy.
  */
 void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
+	printf("#########################################\n rp_lru START\n");
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
 
@@ -595,53 +601,54 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 			// We reuse the page holder we evicted.
 			*curr_frame = frame_to_evict;
 
-			ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
+			CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
+		}
+	} else if (fifo_cached_pages.size() > CS_FIFO_THRESH_DEFAULT) {
 
-		} else if (fifo_cached_pages.size() > CS_FIFO_THRESH_DEFAULT / 2) {
+		page_to_evict = fifo_cached_pages.back()->get();
 
-			page_to_evict = fifo_cached_pages.back()->get();
+		fifo_cached_pages.erase(fifo_cached_pages.back());
 
-			fifo_cached_pages.erase(fifo_cached_pages.back());
+		frame_to_evict = page_frame_map[page_to_evict];
 
-			frame_to_evict = page_frame_map[page_to_evict];
-
-			WARN_PRINTS("evicted page " + itoh(page_to_evict));
-			{
-				Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
-				if (w.get_dirty()) {
-					enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
-				}
-				w.set_used(true).set_last_use(step).set_ready_false();
+		WARN_PRINTS("evicted page " + itoh(page_to_evict));
+		{
+			Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
+			if (w.get_dirty()) {
+				enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
 			}
-			// We reuse the page holder we evicted.
-			*curr_frame = frame_to_evict;
+			w.set_used(true).set_last_use(step).set_ready_false();
+		}
+		// We reuse the page holder we evicted.
+		*curr_frame = frame_to_evict;
 
-			ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
+		CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
 
-		} else if (lru_cached_pages.size()) {
+	} else if (lru_cached_pages.size()) {
 
-			page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : lru_cached_pages.back()->prev()->get();
+		page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : lru_cached_pages.back()->prev()->get();
 
-			lru_cached_pages.erase(page_to_evict);
+		lru_cached_pages.erase(page_to_evict);
 
-			frame_to_evict = page_frame_map[page_to_evict];
+		frame_to_evict = page_frame_map[page_to_evict];
 
-			WARN_PRINTS("evicted page " + itoh(page_to_evict));
-			{
-				Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
-				if (w.get_dirty()) {
-					enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
-				}
-				w.set_used(true).set_last_use(step).set_ready_false();
+		WARN_PRINTS("evicted page " + itoh(page_to_evict));
+		{
+			Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
+			if (w.get_dirty()) {
+				enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
 			}
+			w.set_used(true).set_last_use(step).set_ready_false();
+		}
 
-			// We reuse the page holder we evicted.
-			*curr_frame = frame_to_evict;
+		// We reuse the page holder we evicted.
+		*curr_frame = frame_to_evict;
 
-			ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
+		CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
 
-		} else
-			CRASH_NOW();
+	} else {
+		ERR_PRINTS("CANNOT ADD LRU PAGE TO CACHE; INSUFFICIENT SPACE.")
+		CRASH_NOW()
 	}
 
 	WARN_PRINTS("evicted page under LRU " + itoh(page_to_evict));
@@ -651,13 +658,15 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 	page_frame_map.insert(*curr_page, *curr_frame);
 	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
 	(*curr_page);
+	printf(" rp_lru END\n#########################################\n");
 }
 
 void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
+	printf("#########################################\n rp_keep START\n");
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
 
-	if (fifo_cached_pages.size() > CS_FIFO_THRESH_DEFAULT / 2) {
+	if (fifo_cached_pages.size() > CS_FIFO_THRESH_DEFAULT) {
 
 		page_to_evict = fifo_cached_pages.back()->get();
 
@@ -676,41 +685,18 @@ void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, fr
 		// We reuse the page holder we evicted.
 		*curr_frame = frame_to_evict;
 
-		ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
+		CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
 
-	} else {
+	} else if (lru_cached_pages.size() > CS_LRU_THRESH_DEFAULT) {
 
-		if (lru_cached_pages.size() > CS_LRU_THRESH_DEFAULT / 2) {
+		Frame *f = frames.operator[](page_frame_map.operator[](lru_cached_pages.back()->get()));
+		DescriptorInfo *d = files.operator[](lru_cached_pages.back()->get() >> 40);
 
-			Frame *f = frames.operator[](page_frame_map.operator[](lru_cached_pages.back()->get()));
-			DescriptorInfo *d = files.operator[](lru_cached_pages.back()->get() >> 40);
+		if (step - Frame::MetaRead(f, d->meta_lock).get_last_use() > CS_LRU_THRESH_DEFAULT) {
 
-			if (step - Frame::MetaRead(f, d->meta_lock).get_last_use() > CS_LRU_THRESH_DEFAULT) {
+			page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : permanent_cached_pages.back()->prev()->get();
 
-				page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : permanent_cached_pages.back()->prev()->get();
-
-				lru_cached_pages.erase(page_to_evict);
-
-				frame_to_evict = page_frame_map[page_to_evict];
-
-				{
-					Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
-					if (w.get_dirty()) {
-						enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
-					}
-					w.set_used(true).set_last_use(step).set_ready_false();
-				}
-
-				// We reuse the page holder we evicted.
-				*curr_frame = frame_to_evict;
-
-				ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
-			}
-		} else if (permanent_cached_pages.size() > CS_KEEP_THRESH_DEFAULT / 2) {
-
-			page_to_evict = (rng.randi() % 2) ? permanent_cached_pages.back()->get() : permanent_cached_pages.back()->prev()->get();
-
-			permanent_cached_pages.erase(page_to_evict);
+			lru_cached_pages.erase(page_to_evict);
 
 			frame_to_evict = page_frame_map[page_to_evict];
 
@@ -725,8 +711,31 @@ void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, fr
 			// We reuse the page holder we evicted.
 			*curr_frame = frame_to_evict;
 
-			ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
+			CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
 		}
+	} else if (permanent_cached_pages.size() > CS_KEEP_THRESH_DEFAULT / 2) {
+
+		page_to_evict = (rng.randi() % 2) ? permanent_cached_pages.back()->get() : permanent_cached_pages.back()->prev()->get();
+
+		permanent_cached_pages.erase(page_to_evict);
+
+		frame_to_evict = page_frame_map[page_to_evict];
+
+		{
+			Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
+			if (w.get_dirty()) {
+				enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
+			}
+			w.set_used(true).set_last_use(step).set_ready_false();
+		}
+
+		// We reuse the page holder we evicted.
+		*curr_frame = frame_to_evict;
+
+		CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
+	} else {
+		ERR_PRINTS("CANNOT ADD PERMANENT PAGE TO CACHE; INSUFFICIENT SPACE.")
+		CRASH_NOW()
 	}
 
 	WARN_PRINTS("evicted page under KEEP " + itoh(page_to_evict));
@@ -736,14 +745,15 @@ void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, fr
 	page_frame_map.insert(*curr_page, *curr_frame);
 	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
 	(*curr_page);
+	printf(" rp_keep END\n#########################################\n");
 }
 
 void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
-
+	printf("#########################################\n rp_fifo START\n");
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
 
-	if (fifo_cached_pages.size()) {
+	if (fifo_cached_pages.size() > CS_FIFO_THRESH_DEFAULT) {
 
 		page_to_evict = fifo_cached_pages.back()->get();
 
@@ -761,36 +771,57 @@ void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, fr
 		// We reuse the page holder we evicted.
 		*curr_frame = frame_to_evict;
 
-		ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
+		CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
+
+	} else if (lru_cached_pages.size() > CS_LRU_THRESH_DEFAULT) {
+
+		Frame *f = frames.operator[](page_frame_map.operator[](lru_cached_pages.back()->get()));
+		DescriptorInfo *d = files.operator[](lru_cached_pages.back()->get() >> 40);
+
+		if (step - Frame::MetaRead(f, d->meta_lock).get_last_use() > CS_LRU_THRESH_DEFAULT) {
+
+			page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : lru_cached_pages.back()->prev()->get();
+
+			lru_cached_pages.erase(page_to_evict);
+
+			frame_to_evict = page_frame_map[page_to_evict];
+
+			{
+				Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
+				if (w.get_dirty()) {
+					enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
+				}
+				w.set_used(true).set_last_use(step).set_ready_false();
+			}
+
+			// We reuse the page holder we evicted.
+			*curr_frame = frame_to_evict;
+
+			CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
+		}
+	} else if (fifo_cached_pages.size() > CS_FIFO_THRESH_DEFAULT / 4) {
+
+		page_to_evict = fifo_cached_pages.back()->get();
+
+		fifo_cached_pages.back()->erase();
+
+		frame_to_evict = page_frame_map[page_to_evict];
+
+		{
+			Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
+			if (w.get_dirty()) {
+				enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
+			}
+			w.set_used(true).set_ready_false();
+		}
+		// We reuse the page holder we evicted.
+		*curr_frame = frame_to_evict;
+
+		CRASH_COND(*curr_frame == CS_MEM_VAL_BAD);
 
 	} else {
-		if (lru_cached_pages.size() > CS_LRU_THRESH_DEFAULT / 2) {
-
-			Frame *f = frames.operator[](page_frame_map.operator[](lru_cached_pages.back()->get()));
-			DescriptorInfo *d = files.operator[](lru_cached_pages.back()->get() >> 40);
-
-			if (step - Frame::MetaRead(f, d->meta_lock).get_last_use() > CS_LRU_THRESH_DEFAULT) {
-
-				page_to_evict = (rng.randi() % 2) ? lru_cached_pages.back()->get() : lru_cached_pages.back()->prev()->get();
-
-				lru_cached_pages.erase(page_to_evict);
-
-				frame_to_evict = page_frame_map[page_to_evict];
-
-				{
-					Frame::MetaWrite w(frames[frame_to_evict], files[page_to_evict >> 40]->meta_lock);
-					if (w.get_dirty()) {
-						enqueue_store(files[page_to_evict >> 40], frame_to_evict, CS_GET_FILE_OFFSET_FROM_GUID(page_to_evict));
-					}
-					w.set_used(true).set_last_use(step).set_ready_false();
-				}
-
-				// We reuse the page holder we evicted.
-				*curr_frame = frame_to_evict;
-
-				ERR_FAIL_COND(*curr_frame == CS_MEM_VAL_BAD);
-			}
-		}
+		ERR_PRINTS("CANNOT ADD FIFO PAGE TO CACHE; INSUFFICIENT SPACE.")
+		CRASH_NOW()
 	}
 
 	WARN_PRINTS("evicted page under FIFO " + itoh(page_to_evict));
@@ -800,10 +831,12 @@ void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, fr
 	page_frame_map.insert(*curr_page, *curr_frame);
 	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
 	(*curr_page);
+	printf(" rp_fifo END\n#########################################\n");
 }
 
 bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offset, page_id *curr_page, frame_id *curr_frame) {
 
+	printf("######################################################\n get_or_do_page_op START\n");
 	page_id cp = get_page_guid(desc_info, offset, true);
 	WARN_PRINTS("cp query for offset " + itoh(offset) + " : " + itoh(cp));
 	frame_id cf = CS_MEM_VAL_BAD;
@@ -871,7 +904,7 @@ bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offse
 		MutexLock ml(mutex);
 		step += 1;
 	}
-
+	printf(" get_or_do_page_op END\n######################################################\n");
 	return ret;
 }
 
@@ -959,22 +992,24 @@ void FileCacheManager::thread_func(void *p_udata) {
 				fcs.do_store_op(l.di, curr_page, curr_frame, l.offset);
 				break;
 			}
-			default: ERR_FAIL();
+			default: CRASH_NOW();
 		}
 	} while (!fcs.exit_thread);
 }
 
 void FileCacheManager::check_cache(const RID *const rid, size_t length) {
+	printf("#######################################################################\n check_cache START\n");
 	DescriptorInfo *desc_info = files[RID_PTR_TO_DD];
 	if (length == CS_LEN_UNSPECIFIED) length = 8 * CS_PAGE_SIZE;
 
-	for (int i = desc_info->offset; i < desc_info->offset + length; i += CS_PAGE_SIZE) {
-		WARN_PRINTS("curr offset: " + itoh(i) + "");
+	for (int i = CS_GET_PAGE(desc_info->offset); i < CS_GET_PAGE(desc_info->offset + length) + CS_PAGE_SIZE; i += CS_PAGE_SIZE) {
+		WARN_PRINTS("curr offset for check_cache: " + itoh(i));
 		if (!get_or_do_page_op(desc_info, i, NULL, NULL)) {
 			// TODO: reduce inconsistency here.
-			enqueue_load(desc_info, page_frame_map[desc_info->guid_prefix | CS_GET_PAGE(i)], i);
+			enqueue_load(desc_info, page_frame_map[desc_info->guid_prefix | i], i);
 		}
 	}
+	printf(" check_cache END\n#######################################################################\n");
 }
 
 _FileCacheManager::_FileCacheManager() {

@@ -133,23 +133,28 @@ public:
 	virtual uint8_t get_8() const { return get_t<uint8_t>(); } ///< get a byte
 
 	virtual int get_buffer(uint8_t *p_dst, int p_length) const {
+		printf("##############################################################################################\n get_buffer START\n");
 		int o_length = 0;
-		WARN_PRINTS("Initial offset: " + itoh(cache_mgr->get_len(&cached_file)));
+		ERR_PRINTS("Initial offset: " + itoh(cache_mgr->get_position(&cached_file)));
 
 		// Read 4 pages of data at a time. This is so that it will always be
 		// possible to have pages of a file present in the cache without worrying
 		// about not being able to add new pages to the cache or reading from invalid pages.
-		for(int i = 0; i < p_length - (p_length % (CS_PAGE_SIZE * 4)); i += CS_PAGE_SIZE * 4) {
-			WARN_PRINTS("curr length: " + itoh(i))
+
+
+		for(int i = 0; i < p_length - (p_length % (CS_PAGE_SIZE * 4)); i += CS_PAGE_SIZE * 2) {
+			ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(&cached_file) + i));
 			cache_mgr->check_cache(&cached_file, CS_PAGE_SIZE * 4);
-			o_length += cache_mgr->read(&cached_file, p_dst + i, CS_PAGE_SIZE * 4);
+			o_length += cache_mgr->read(&cached_file, p_dst + i, CS_PAGE_SIZE * 2);
 		}
 
 		if((p_length % (CS_PAGE_SIZE * 4)) > 0) {
+			ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(&cached_file)));
 			cache_mgr->check_cache(&cached_file, CS_PAGE_SIZE * 4);
-			o_length += cache_mgr->read(&cached_file, p_dst + p_length - (p_length % (CS_PAGE_SIZE * 4)), (p_length % (4 * CS_PAGE_SIZE)));
+			o_length += cache_mgr->read(&cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
 
+		printf(" get_buffer END\n##############################################################################################\n");
 		return o_length;
 	} ///< get an array of bytes
 
