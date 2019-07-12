@@ -167,7 +167,7 @@ void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page,
 //
 // This operation updates the used_size value of the page holder.
 _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
-	desc_info->internal_data_source->seek(offset);
+	desc_info->internal_data_source->seek(CS_GET_PAGE(offset));
 	size_t used_size;
 	{
 		Frame::DataWrite w(
@@ -183,7 +183,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 			frames[curr_frame],
 			desc_info->meta_lock
 		).set_used_size(used_size)
-		.set_ready_true(desc_info->sem);
+		.set_ready_true(desc_info->sem, curr_page, curr_frame);
 	}
 	ERR_PRINTS("Loaded " + itoh(used_size) + " from offset " + itoh(offset) + " with page " + itoh(curr_page) + " mapped to frame " + itoh(curr_frame))
 	return (used_size < CS_PAGE_SIZE);

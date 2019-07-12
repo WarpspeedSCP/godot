@@ -243,9 +243,9 @@ public:
 			return alloc->ready;
 		}
 
-		_FORCE_INLINE_ MetaWrite &set_ready_true(Semaphore *ready_sem) {
+		_FORCE_INLINE_ MetaWrite &set_ready_true(Semaphore *ready_sem, page_id page, frame_id frame) {
 			alloc->ready = true;
-			WARN_PRINT("Part ready.");
+			WARN_PRINTS("Part ready for page " + itoh(page) + " and frame " + itoh(frame) + " .");
 			ready_sem->post();
 			return *this;
 		}

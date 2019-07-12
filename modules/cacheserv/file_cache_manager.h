@@ -276,7 +276,7 @@ public:
 		// TODO: Investigate possible deadlocks.
 			WARN_PRINTS("Accessed out of bounds, reading zeroes.");
 			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->data_lock).ptr(), 0, CS_PAGE_SIZE);
-			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_ready_true(desc_info->sem);
+			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_ready_true(desc_info->sem, CS_GET_PAGE(offset), curr_frame);
 			WARN_PRINTS("Finished OOB access.");
 		} else {
 			op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
