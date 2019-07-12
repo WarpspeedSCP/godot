@@ -116,7 +116,7 @@ private:
 	bool check_incomplete_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 	bool check_incomplete_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 	void do_load_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
-	void do_paging_op(DescriptorInfo *desc_info, page_id curr_page, frame_id *curr_frame, size_t offset = 0UL);
+	// void do_paging_op(DescriptorInfo *desc_info, page_id curr_page, frame_id *curr_frame, size_t offset = 0UL);
 	void do_store_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 
 	// Returns true if the page at the current offset is already tracked.
@@ -268,7 +268,21 @@ public:
 	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
 		WARN_PRINTS("Enqueueing load for file " + desc_info->abs_path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
 
-		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
+		if (offset > desc_info->total_size) {
+		// We can zero fill the current frame and return if the
+		// current page is higher than the size of the file, to
+		// prevent accidentally reading old data.
+		// Not sure if this can cause a deadlock yet.
+		// TODO: Investigate possible deadlocks.
+			WARN_PRINTS("Accessed out of bounds, reading zeroes.");
+			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->data_lock).ptr(), 0, CS_PAGE_SIZE);
+			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_ready_true(desc_info->sem);
+			WARN_PRINTS("Finished OOB access.");
+		} else {
+			op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
+
+		}
+
 	}
 
 	// Expects that the page at the given offset is in the cache.

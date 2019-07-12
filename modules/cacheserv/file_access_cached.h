@@ -233,11 +233,11 @@ public:
 		return fac._get_buffer(len);
 	}
 
-	void seek(ssize_t position) {
+	void seek(int64_t position) {
 		fac.seek(position);
 	}
 
-	void seek_end(ssize_t position) {
+	void seek_end(int64_t position) {
 		fac.seek(position);
 	}
 

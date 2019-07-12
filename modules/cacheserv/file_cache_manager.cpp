@@ -33,9 +33,9 @@
 
 #include "core/os/os.h"
 
-#include <fcntl.h>
+// #include <fcntl.h>
 #include <time.h>
-#include <unistd.h>
+// #include <unistd.h>
 
 static const bool CS_TRUE = true;
 static const bool CS_FALSE = true;
@@ -143,13 +143,6 @@ void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, 
 		else {
 			ERR_PRINTS("Read size : " + itoh(frames[curr_frame]->used_size));
 		}
-	} else if (offset > desc_info->total_size) {
-		// We can zero fill the current frame and return if the
-		// current page is higher than the size of the file, to
-		// prevent accidentally reading old data.
-		// Not sure if this can cause a deadlock yet.
-		// TODO: Investigate possible deadlocks.
-		memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->data_lock).ptr(), 0, CS_PAGE_SIZE);
 	} else {
 		check_incomplete_page_load(desc_info, curr_page, curr_frame, offset);
 		ERR_PRINTS("Read " + itoh(frames[curr_frame]->used_size) + " bytes at end of file.");
@@ -325,7 +318,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 
 		// TODO: Document this. Reads that exceed EOF will cause the remaining buffer space to be zeroed out.
 		if ((desc_info->offset + length) / desc_info->total_size > 0) {
-			memset(buffer + (desc_info->total_size - desc_info->offset), 'B', length - read_length);
+			memset((uint8_t *)buffer + (desc_info->total_size - desc_info->offset), 'B', length - read_length);
 		}
 
 		// We update the current offset at the end of the operation.
@@ -447,7 +440,7 @@ size_t FileCacheManager::seek(const RID *const rid, size_t new_offset, int mode)
 		DescriptorInfo *desc_info = elem;
 		size_t curr_offset = desc_info->offset;
 		size_t end_offset = desc_info->total_size;
-		ssize_t eff_offset = 0;
+		int64_t eff_offset = 0;
 		switch (mode) {
 			case SEEK_SET:
 				eff_offset += new_offset;
@@ -812,7 +805,7 @@ void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, fr
 bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offset, page_id *curr_page, frame_id *curr_frame) {
 
 	page_id cp = get_page_guid(desc_info, offset, true);
-	WARN_PRINT(("cp query: " + itoh(cp)).utf8().get_data());
+	WARN_PRINTS("cp query for offset " + itoh(offset) + " : " + itoh(cp));
 	frame_id cf = CS_MEM_VAL_BAD;
 	bool ret;
 
@@ -942,7 +935,6 @@ Error FileCacheManager::init() {
 }
 
 void FileCacheManager::thread_func(void *p_udata) {
-	srandom(time(0));
 	FileCacheManager &fcs = *static_cast<FileCacheManager *>(p_udata);
 
 	do {
