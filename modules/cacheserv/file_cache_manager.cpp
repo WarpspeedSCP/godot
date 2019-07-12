@@ -198,7 +198,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 //
 // This operation updates the used_size value of the page holder.
 _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
-	desc_info->internal_data_source->seek(offset);
+	desc_info->internal_data_source->seek(CS_GET_PAGE(offset));
 	{
 		Frame::DataRead r(frames[curr_frame], desc_info->sem, desc_info->data_lock);
 		desc_info->internal_data_source->store_buffer(r.ptr(), CS_PAGE_SIZE);
