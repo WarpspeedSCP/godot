@@ -1,6 +1,6 @@
 #include "file_access_unbuffered.h"
 
-#if defined(UNIX_ENABLED) || defined(LIBC_FILEIO_ENABLED)
+#if defined(UNIX_ENABLED)
 
 #include "core/os/os.h"
 #include "core/print_string.h"
@@ -8,10 +8,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#if defined(UNIX_ENABLED)
 #include <unistd.h>
 #include <fcntl.h>
-#endif
 
 #ifndef ANDROID_ENABLED
 #include <sys/statvfs.h>
@@ -38,7 +36,7 @@ void FileAccessUnbuffered::check_errors(int val, int expected, int mode) {
 			if (val >= st.st_size) {
 				last_error = ERR_FILE_EOF;
 			} else if (val != expected) {
-				ERR_PRINT(("Read less than " + itos(expected) + " bytes").utf8().get_data());
+				ERR_PRINTS("Read less than " + itoh(expected) + " bytes");
 			}
 			return;
 		case CHK_MODE_WRITE:
@@ -70,6 +68,7 @@ Error FileAccessUnbuffered::_open(const String &p_path, int p_mode_flags) {
 	path = fix_path(p_path);
 	//printf("opening %ls, %i\n", path.c_str(), Memory::get_static_mem_usage());
 
+	// If the FD is currently invalid, all good. We don't want to overwrite a valid FD by accident.
 	ERR_FAIL_COND_V(fd != -1, ERR_ALREADY_IN_USE);
 	int mode;
 
@@ -87,9 +86,6 @@ Error FileAccessUnbuffered::_open(const String &p_path, int p_mode_flags) {
 	#ifdef O_DIRECT
 		mode |= O_DIRECT;
 	#endif
-
-	/* pretty much every implementation that uses fopen as primary
-	   backend (unix-compatible mostly) supports utf8 encoding */
 
 	//printf("opening %s as %s\n", p_path.utf8().get_data(), path.utf8().get_data());
 	int err = stat(path.utf8().get_data(), &st);
@@ -146,7 +142,7 @@ void FileAccessUnbuffered::close() {
 
 bool FileAccessUnbuffered::is_open() const {
 
-	return (fd < 0);
+	return (fd > 0);
 }
 
 String FileAccessUnbuffered::get_path() const {
@@ -166,21 +162,24 @@ void FileAccessUnbuffered::seek(size_t p_position) {
 
 	last_error = OK;
 
-	int new_pos = ::lseek(fd, p_position, SEEK_SET);
+	int old_pos = pos;
 
-	ERR_FAIL_COND(new_pos == -1);
-
-	check_errors(new_pos, p_position, CHK_MODE_SEEK);
-
-	if(new_pos >= st.st_size) {
+	if(p_position >= st.st_size) {
 
 		pos = ::lseek(fd, 0, SEEK_END);
 
 	} else {
 
-		pos = new_pos;
+		pos = ::lseek(fd, p_position, SEEK_SET);;
 
 	}
+
+	if (pos == -1) {
+		pos = old_pos;
+		ERR_FAIL();
+	}
+
+	check_errors(pos, p_position, CHK_MODE_SEEK);
 
 }
 
@@ -188,6 +187,7 @@ void FileAccessUnbuffered::seek_end(int64_t p_position) {
 
 	ERR_FAIL_COND(fd < 0);
 	ERR_FAIL_COND(p_position > 0);
+	ERR_FAIL_COND((p_position + st.st_size) < 0);
 
 	last_error = OK;
 

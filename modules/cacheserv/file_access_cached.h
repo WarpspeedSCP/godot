@@ -68,6 +68,7 @@ protected:
 			return ERR_CANT_OPEN;
 	}
 
+	// Can't really use this.
 	virtual Error _open(const String &p_path, int p_mode_flags) {
 		return ERR_UNAVAILABLE;
 	} ///< open a file
@@ -78,7 +79,6 @@ protected:
 		T buf = CS_MEM_VAL_BAD;
 		cache_mgr->check_cache(&cached_file, sizeof(T));
 		int o_length = cache_mgr->read(&cached_file, &buf, sizeof(T));
-		ERR_FAIL_COND_V(buf == (T)CS_MEM_VAL_BAD, CS_MEM_VAL_BAD);
 		return buf;
 	}
 
@@ -133,7 +133,6 @@ public:
 	virtual uint8_t get_8() const { return get_t<uint8_t>(); } ///< get a byte
 
 	virtual int get_buffer(uint8_t *p_dst, int p_length) const {
-		printf("##############################################################################################\n get_buffer START\n");
 		int o_length = 0;
 		ERR_PRINTS("Initial offset: " + itoh(cache_mgr->get_position(&cached_file)));
 
@@ -154,7 +153,6 @@ public:
 			o_length += cache_mgr->read(&cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
 
-		printf(" get_buffer END\n##############################################################################################\n");
 		return o_length;
 	} ///< get an array of bytes
 

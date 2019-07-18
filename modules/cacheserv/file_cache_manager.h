@@ -42,7 +42,7 @@
 #include "core/variant.h"
 #include "core/vector.h"
 
-#include "cache_info_table.h"
+#include "data_helpers.h"
 #include "cacheserv_defines.h"
 #include "control_queue.h"
 
@@ -109,14 +109,15 @@ public:
 private:
 	static void thread_func(void *p_udata);
 
+	/** 
+	 * Register a file handle with the cache manager. This function takes a pointer to a FileAccess object,  so anything that implements the FileAccess API (from the file system, or from the network)  can act as a data source.
+	 */
 	data_descriptor add_data_source(RID *rid, FileAccess *data_source, int cache_policy);
 	void remove_data_source(data_descriptor dd);
 
-	void enforce_cache_policy(DescriptorInfo *desc_info, page_id curr_page);
 	bool check_incomplete_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 	bool check_incomplete_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 	void do_load_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
-	// void do_paging_op(DescriptorInfo *desc_info, page_id curr_page, frame_id *curr_frame, size_t offset = 0UL);
 	void do_store_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 
 	// Returns true if the page at the current offset is already tracked.

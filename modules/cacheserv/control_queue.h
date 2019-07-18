@@ -7,7 +7,7 @@
 #include "core/os/mutex.h"
 #include "core/os/semaphore.h"
 
-#include "cache_info_table.h"
+#include "data_helpers.h"
 
 
 class CachedResourceHandle : public RID_Data {};

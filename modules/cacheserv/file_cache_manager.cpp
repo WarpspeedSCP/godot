@@ -33,9 +33,7 @@
 
 #include "core/os/os.h"
 
-// #include <fcntl.h>
 #include <time.h>
-// #include <unistd.h>
 
 static const bool CS_TRUE = true;
 static const bool CS_FALSE = true;
@@ -90,8 +88,14 @@ FileCacheManager::~FileCacheManager() {
 	memdelete(this->mutex);
 }
 
+/** 
+ * Register a file handle with the cache manager.
+ * This function takes a pointer to a FileAccess object, 
+ * so anything that implements the FileAccess API (from the file system, or from the network) 
+ * can act as a data source.
+ */
 data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_source, int cache_policy) {
-	printf("##############################################################################################\n add_data_source START\n");
+
 	CRASH_COND(!rid->is_valid());
 	data_descriptor dd = RID_PTR_TO_DD;
 
@@ -104,7 +108,7 @@ data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_sou
 	CRASH_COND(files[dd] == NULL);
 	seek(rid, 0, SEEK_SET);
 	check_cache(rid, (cache_policy == _FileCacheManager::KEEP ? CS_KEEP_THRESH_DEFAULT : cache_policy == _FileCacheManager::LRU ? CS_LRU_THRESH_DEFAULT : CS_FIFO_THRESH_DEFAULT) * CS_PAGE_SIZE);
-	printf(" add_data_source END\n##############################################################################################\n");
+
 	return dd;
 }
 
@@ -209,7 +213,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo
 
 // Perform a read operation.
 size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t length) {
-	printf("#######################################################################\n read START\n");
+
 	DescriptorInfo **elem = files.getptr(rid->get_id());
 
 	if (!elem) {
@@ -243,7 +247,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 			CRASH_COND((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD);
 
 			// The end offset of the first page may not be greater than the start offset of the next page.
-			initial_end_offset = MIN(initial_start_offset + length, initial_end_offset);
+			initial_end_offset = MIN(initial_start_offset + read_length, initial_end_offset);
 			WARN_PRINTS("Reading first page with values:\ninitial_start_offset: " + itoh(initial_start_offset) + "\ninitial_end_offset: " + itoh(initial_end_offset) + "\n read size: " + itoh(initial_end_offset - initial_start_offset));
 
 			{ // Lock the page holder for the operation.
@@ -261,7 +265,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 			}
 
 			buffer_offset += (initial_end_offset - initial_start_offset);
-			read_length -= (initial_end_offset - initial_start_offset);
+			read_length -= buffer_offset;
 		}
 
 		// Pages in the middle must be copied in full.
@@ -314,7 +318,7 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 			read_length -= temp_read_len;
 		}
 
-		if (read_length > 0) WARN_PRINTS("Read less than " + itoh(length - read_length) + " bytes.")
+		if (read_length > 0) WARN_PRINTS("Unread length: " + itoh(length - read_length) + " bytes.")
 
 		// TODO: Document this. Reads that exceed EOF will cause the remaining buffer space to be zeroed out.
 		if ((desc_info->offset + length) / desc_info->total_size > 0) {
@@ -323,10 +327,9 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 
 		// We update the current offset at the end of the operation.
 		desc_info->offset += buffer_offset;
-		printf(" read END\n#######################################################################\n");
+
 		return buffer_offset;
 	}
-	printf(" read END\n#######################################################################\n");
 }
 
 // Similar to the read operation but opposite data flow.
@@ -339,9 +342,10 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 
 	} else {
 		DescriptorInfo *desc_info = *elem;
+		size_t write_length = length;
+
 		size_t initial_start_offset = desc_info->offset;
-		size_t initial_end_offset = initial_start_offset + CS_PAGE_SIZE;
-		size_t final_partial_length = CS_PARTIAL_SIZE(initial_start_offset + length);
+		size_t initial_end_offset = CS_GET_PAGE(initial_start_offset + CS_PAGE_SIZE);
 		page_id curr_page = CS_MEM_VAL_BAD;
 		frame_id curr_frame = CS_MEM_VAL_BAD;
 		size_t data_offset = 0;
@@ -349,15 +353,16 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 		// We need to handle the first and last frames differently,
 		// because the data to be copied may not start at a page boundary, and may not end on a page boundary.
 		{
+
+			WARN_PRINTS("Getting page for offset " + itoh(desc_info->offset + data_offset) + " with start offset " + itoh(desc_info->offset))
 			// Query for the page with the current offset.
 			CRASH_COND((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
 			CRASH_COND((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD);
 
 			// The end offset of the first page may not be greater than the start offset of the next page.
-			initial_end_offset = CLAMP(initial_start_offset + length, 0, CS_GET_PAGE(initial_start_offset) + CS_PAGE_SIZE);
-
-			WARN_PRINT("Reading first page.");
+			initial_end_offset = MIN(initial_start_offset + write_length, initial_end_offset);
+			WARN_PRINTS("Reading first page with values:\ninitial_start_offset: " + itoh(initial_start_offset) + "\ninitial_end_offset: " + itoh(initial_end_offset) + "\n read size: " + itoh(initial_end_offset - initial_start_offset));
 
 			{ // Lock the page holder for the operation.
 				Frame::DataWrite w(frames[curr_frame], desc_info->sem, desc_info->data_lock);
@@ -368,16 +373,17 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 				// We can copy only CS_PAGE_SIZE - PARTIAL_SIZE(desc_info->offset) which gives us the number
 				//  of bytes from the current offset to the end of the page.
 				memcpy(
-						w.ptr() + CS_PARTIAL_SIZE(initial_start_offset),
+						w.ptr() + CS_PARTIAL_SIZE(initial_start_offset), 
 						(uint8_t *)data + data_offset,
 						initial_end_offset - initial_start_offset);
 			}
 
-			data_offset += initial_end_offset - initial_start_offset;
+			data_offset += (initial_end_offset - initial_start_offset);
+			write_length -= data_offset;
 		}
 
 		// Pages in the middle must be copied in full.
-		while (data_offset < CS_GET_PAGE(length)) {
+		while (data_offset < CS_GET_PAGE(write_length) && write_length > CS_PAGE_SIZE) {
 
 			// Query for the page with the current offset.
 			CRASH_COND((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD);
@@ -385,7 +391,7 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 			CRASH_COND((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD);
 
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info->offset) gives us the start
-			WARN_PRINT("Reading intermediate page.");
+			WARN_PRINTS("Writing intermediate page.\data_offset: " + itoh(data_offset) + "\nwrite_length: " + itoh(write_length) + "\ncurrent offset: " + itoh(desc_info->offset));
 
 			// Lock current page holder.
 			{
@@ -398,19 +404,21 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 			}
 
 			data_offset += CS_PAGE_SIZE;
+			write_length -= CS_PAGE_SIZE;
 		}
 
 		// For final potentially partially filled page
-		if (initial_end_offset == CS_PAGE_SIZE && final_partial_length) {
+		if (write_length) {
 
 			// Query for the page with the current offset.
 			CRASH_COND((curr_page = get_page_guid(desc_info, desc_info->offset + data_offset, true)) == CS_MEM_VAL_BAD);
 			// Get page holder mapped to page.
 			CRASH_COND((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD);
 
-			CRASH_COND(curr_page + final_partial_length > curr_page + CS_PAGE_SIZE);
+			// CRASH_COND(curr_page + final_partial_length > curr_page + CS_PAGE_SIZE);
 
-			WARN_PRINT("Reading last page.");
+			size_t temp_write_len = CLAMP(write_length, 0, Frame::MetaRead(frames[curr_frame], desc_info->meta_lock).get_used_size());
+			WARN_PRINTS("Writing last page.\nwrite_length: " + itoh(write_length) + "\ntemp_write_len: " + itoh(temp_write_len));
 
 			{ // Lock last page for reading data.
 				Frame::DataWrite w(frames[curr_frame], desc_info->sem, desc_info->data_lock);
@@ -418,11 +426,14 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 				memcpy(
 						w.ptr(),
 						(uint8_t *)data + data_offset,
-						final_partial_length);
+						temp_write_len);
 			}
-			data_offset += final_partial_length;
+			data_offset += temp_write_len;
+			write_length -= temp_write_len;
 		}
+		if (write_length > 0) WARN_PRINTS("Unwritten length: " + itoh(length - write_length) + " bytes.")
 
+		// If the write exceeds the file's 
 		desc_info->offset += data_offset;
 
 		return data_offset;
@@ -465,15 +476,15 @@ size_t FileCacheManager::seek(const RID *const rid, size_t new_offset, int mode)
 			ERR_PRINT("Invalid offset.")
 			return CS_MEM_VAL_BAD;
 
-			// In this case, there can only be a hole and no data, so we only
-			// do a paging operation to represent it in memory, in case of a write.
 		}
 
 		if (eff_offset - curr_offset > CS_FIFO_THRESH_DEFAULT) {
 			/** when the user seeks far away from the current offset,
 			 * if the io queue currently has pending operations, maybe
 			 * we can clear the queue. That way, we can read ahead at the
-			 * new offset without any waits, and we only need to do an inexpensive page_id replacement operation instead of waiting for a load to occur.
+			 * new offset without any waits, and we only need to do an
+			 * inexpensive page replacement operation instead of waiting
+			 * for a load to occur.
 			*/
 			CtrlOp l;
 			// This executes on the main thread.
@@ -536,7 +547,7 @@ size_t FileCacheManager::get_len(const RID *const rid) const {
 }
 
 RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
-	printf("#########################################################################################################\n open START\n");
+
 	printf("%s %d\n", path.utf8().get_data(), p_mode);
 
 	ERR_FAIL_COND_V(!mutex, RID());
@@ -553,7 +564,6 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 	add_data_source(&rid, fa, cache_policy);
 	printf("open file %s with mode %d\nGot RID %d\n", path.utf8().get_data(), p_mode, RID_REF_TO_DD);
 
-	printf(" open END\n######################################################################################################\n");
 	return rid;
 }
 
@@ -573,7 +583,7 @@ bool FileCacheManager::eof_reached(const RID *const rid) const {
  * LRU replacement policy.
  */
 void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
-	printf("#########################################\n rp_lru START\n");
+
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
 
@@ -658,11 +668,10 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 	page_frame_map.insert(*curr_page, *curr_frame);
 	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
 	(*curr_page);
-	printf(" rp_lru END\n#########################################\n");
 }
 
 void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
-	printf("#########################################\n rp_keep START\n");
+
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
 
@@ -745,11 +754,10 @@ void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, fr
 	page_frame_map.insert(*curr_page, *curr_frame);
 	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
 	(*curr_page);
-	printf(" rp_keep END\n#########################################\n");
 }
 
 void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame) {
-	printf("#########################################\n rp_fifo START\n");
+
 	page_id page_to_evict = CS_MEM_VAL_BAD;
 	frame_id frame_to_evict = CS_MEM_VAL_BAD;
 
@@ -831,12 +839,10 @@ void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, fr
 	page_frame_map.insert(*curr_page, *curr_frame);
 	CS_GET_CACHE_POLICY_FN(cache_insertion_policies, desc_info->cache_policy)
 	(*curr_page);
-	printf(" rp_fifo END\n#########################################\n");
 }
 
 bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offset, page_id *curr_page, frame_id *curr_frame) {
 
-	printf("######################################################\n get_or_do_page_op START\n");
 	page_id cp = get_page_guid(desc_info, offset, true);
 	WARN_PRINTS("cp query for offset " + itoh(offset) + " : " + itoh(cp));
 	frame_id cf = CS_MEM_VAL_BAD;
@@ -904,7 +910,7 @@ bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offse
 		MutexLock ml(mutex);
 		step += 1;
 	}
-	printf(" get_or_do_page_op END\n######################################################\n");
+
 	return ret;
 }
 
@@ -998,7 +1004,7 @@ void FileCacheManager::thread_func(void *p_udata) {
 }
 
 void FileCacheManager::check_cache(const RID *const rid, size_t length) {
-	printf("#######################################################################\n check_cache START\n");
+
 	DescriptorInfo *desc_info = files[RID_PTR_TO_DD];
 	if (length == CS_LEN_UNSPECIFIED) length = 8 * CS_PAGE_SIZE;
 
@@ -1009,7 +1015,6 @@ void FileCacheManager::check_cache(const RID *const rid, size_t length) {
 			enqueue_load(desc_info, page_frame_map[desc_info->guid_prefix | i], i);
 		}
 	}
-	printf(" check_cache END\n#######################################################################\n");
 }
 
 _FileCacheManager::_FileCacheManager() {

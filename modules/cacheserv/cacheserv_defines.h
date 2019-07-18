@@ -32,8 +32,8 @@
 #define CACHESERV_DEFINES_H
 
 #define CS_PAGE_SIZE 0x1000
-#define CS_CACHE_SIZE (size_t)(CS_PAGE_SIZE * 16)
-#define CS_MEM_VAL_BAD (size_t) ~0
+#define CS_CACHE_SIZE (uint64_t)(CS_PAGE_SIZE * 16)
+#define CS_MEM_VAL_BAD (uint64_t) ~0
 #define CS_NUM_FRAMES CS_CACHE_SIZE/CS_PAGE_SIZE
 #define CS_MIN(a, b) a < b ? a : b
 #define CS_FIFO_THRESH_DEFAULT 8
