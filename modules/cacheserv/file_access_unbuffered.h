@@ -35,6 +35,10 @@
 #include "core/os/file_access.h"
 #include "core/os/memory.h"
 
+
+#include "data_helpers.h"
+
+
 #if defined(UNIX_ENABLED) || defined(LIBC_FILEIO_ENABLED)
 
 #include <unistd.h>

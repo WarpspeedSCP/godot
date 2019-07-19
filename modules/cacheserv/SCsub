@@ -6,7 +6,7 @@ Import('env_modules')
 env_cacheserv = env.Clone()
 
 sources = [
-	"cache_info_table.cpp",
+	"data_helpers.cpp",
 	"file_access_cached.cpp",
 	"file_access_unbuffered.cpp",
 	"file_cache_manager.cpp",
