@@ -62,10 +62,8 @@ protected:
 
 	Error cached_open(const String &p_path, int p_mode_flags, int cache_policy) {
 		cached_file = cache_mgr->open(p_path, p_mode_flags, cache_policy);
-		if(cached_file.is_valid())
-			return OK;
-		else
-			return ERR_CANT_OPEN;
+		ERR_FAIL_COND_V(cached_file.is_valid() == false, ERR_CANT_OPEN);
+		return OK;
 	}
 
 	// Can't really use this.
@@ -79,6 +77,9 @@ protected:
 		T buf = CS_MEM_VAL_BAD;
 		cache_mgr->check_cache(&cached_file, sizeof(T));
 		int o_length = cache_mgr->read(&cached_file, &buf, sizeof(T));
+		if (o_length < sizeof(T)) {
+			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
+		}
 		return buf;
 	}
 
@@ -87,6 +88,9 @@ protected:
 
 		cache_mgr->check_cache(&cached_file, sizeof(T));
 		int o_length = cache_mgr->write(&cached_file, &buf, sizeof(T));
+		if (o_length < sizeof(T)) {
+			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
+		}
 	}
 
 	static void _bind_methods() {

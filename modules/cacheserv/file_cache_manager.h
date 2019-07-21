@@ -109,7 +109,7 @@ public:
 private:
 	static void thread_func(void *p_udata);
 
-	/** 
+	/**
 	 * Register a file handle with the cache manager. This function takes a pointer to a FileAccess object,  so anything that implements the FileAccess API (from the file system, or from the network)  can act as a data source.
 	 */
 	data_descriptor add_data_source(RID *rid, FileAccess *data_source, int cache_policy);
@@ -138,17 +138,20 @@ public:
 
 	void rmp_lru(page_id curr_page) {
 		WARN_PRINTS("Removing LRU page " + itoh(curr_page));
-		lru_cached_pages.erase(curr_page);
+		if (lru_cached_pages.find(curr_page) != NULL)
+			lru_cached_pages.erase(curr_page);
 	}
 
 	void rmp_fifo(page_id curr_page) {
 		WARN_PRINTS("Removing FIFO page " + itoh(curr_page));
-		fifo_cached_pages.erase(curr_page);
+		if(fifo_cached_pages.find(curr_page) != NULL)
+			fifo_cached_pages.erase(curr_page);
 	}
 
 	void rmp_keep(page_id curr_page) {
 		WARN_PRINTS("Removing permanent page " + itoh(curr_page));
-		permanent_cached_pages.erase(curr_page);
+		if(permanent_cached_pages.find(curr_page) != NULL)
+			permanent_cached_pages.erase(curr_page);
 	}
 
 	void ip_lru(page_id curr_page) {

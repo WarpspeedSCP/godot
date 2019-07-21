@@ -1,5 +1,5 @@
 /*************************************************************************/
-/*  file_access_unbuffered.h                                             */
+/*  file_access_unbuffered_unix.h                                        */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
@@ -29,8 +29,8 @@
 /*************************************************************************/
 
 
-#ifndef FILE_ACCESS_UNBUF_H
-#define FILE_ACCESS_UNBUF_H
+#ifndef FILE_ACCESS_UNBUF_UNIX_H
+#define FILE_ACCESS_UNBUF_UNIX_H
 
 #include "core/os/file_access.h"
 #include "core/os/memory.h"
@@ -39,7 +39,7 @@
 #include "data_helpers.h"
 
 
-#if defined(UNIX_ENABLED) || defined(LIBC_FILEIO_ENABLED)
+#if defined(UNIX_ENABLED)
 
 #include <unistd.h>
 #include <sys/stat.h>
@@ -50,7 +50,7 @@
 
 typedef void (*CloseNotificationFunc)(const String &p_file, int p_flags);
 
-class FileAccessUnbuffered : public FileAccess {
+class 	FileAccessUnbufferedUnix : public FileAccess {
 
 	enum CheckMode {
 		CHK_MODE_SEEK,
@@ -63,6 +63,7 @@ class FileAccessUnbuffered : public FileAccess {
 	int flags;
     struct stat st;
 	void check_errors() const;
+	int check_errors(int val/* , int mode */) const;
 	void check_errors(int val, int expected, int mode);
 	mutable Error last_error;
 	String save_path;
@@ -74,7 +75,9 @@ class FileAccessUnbuffered : public FileAccess {
 public:
 	static CloseNotificationFunc close_notification_func;
 
+	Error unbuffered_open(const String &p_path, int p_mode_flags);
 	virtual Error _open(const String &p_path, int p_mode_flags); ///< open a file
+	// Error open();
 	virtual void close(); ///< close a file
 	virtual bool is_open() const; ///< true when file is open
 
@@ -107,10 +110,10 @@ public:
 
 	virtual Error _chmod(const String &p_path, int p_mod);
 
-	FileAccessUnbuffered();
-	virtual ~FileAccessUnbuffered();
+	FileAccessUnbufferedUnix();
+	virtual ~FileAccessUnbufferedUnix();
 };
 
-#endif
+#endif // if defined(UNIX_ENABLED)
 
-#endif // FILE_ACCESS_UNBUF_H
+#endif // FILE_ACCESS_UNBUF_UNIX_H

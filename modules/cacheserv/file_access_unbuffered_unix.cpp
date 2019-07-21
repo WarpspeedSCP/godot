@@ -1,4 +1,4 @@
-#include "file_access_unbuffered.h"
+#include "file_access_unbuffered_unix.h"
 
 #if defined(UNIX_ENABLED)
 
@@ -15,60 +15,58 @@
 #include <sys/statvfs.h>
 #endif
 
-#ifdef MSVC
-#define S_ISREG(m) ((m)&_S_IFREG)
-#include <io.h>
-#endif
-#ifndef S_ISREG
-#define S_ISREG(m) ((m)&S_IFREG)
-#endif
+void FileAccessUnbufferedUnix::check_errors() const {}
 
-// Stubbed because of lack of utility.
-void FileAccessUnbuffered::check_errors() const {
+// Returns -1 if the value is less than 0 and the value otherwise.
+int FileAccessUnbufferedUnix::check_errors(int val) const {
+	ERR_FAIL_COND_V(val < 0, -1);
+	return val;
 }
 
-void FileAccessUnbuffered::check_errors(int val, int expected, int mode) {
+void FileAccessUnbufferedUnix::check_errors(int val, int expected, int mode) {
 
-	ERR_FAIL_COND(fd < 0);
+	CRASH_COND(fd < 0);
 
 	switch(mode) {
 		case CHK_MODE_SEEK:
 			if (val >= st.st_size) {
+				ERR_PRINTS("Seeked to EOF.");
 				last_error = ERR_FILE_EOF;
 			} else if (val != expected) {
-				ERR_PRINTS("Read less than " + itoh(expected) + " bytes");
+				ERR_EXPLAIN("Seeked to " + itoh(val) + " instead of " + itoh(expected));
+				// CRASH_COND();
 			}
 			return;
 		case CHK_MODE_WRITE:
 			if (val == -1) {
-				ERR_PRINT(("Write error with file." + this->path).utf8().get_data());
+				ERR_PRINTS("Write error with file " + this->path);
 				last_error = ERR_FILE_CANT_WRITE;
 			}
+			// else if(val != expected) {
+			// 	ERR_PRINTS("Wrote " + itoh(val) + " instead of " + itoh(expected) + " bytes from " + this->path);
+			// 	last_error = ERR_FILE_EOF;
+			// }
 			return;
 		case CHK_MODE_READ:
 			if(val == -1) {
-				ERR_PRINT(("Read error with file." + this->path).utf8().get_data());
+				ERR_PRINTS("Read error with file " + this->path);
 				last_error = ERR_FILE_CANT_READ;
+			} else if(val != expected) {
+				ERR_PRINTS("Read " + itoh(val) + " instead of " + itoh(expected) + " bytes from " + this->path);
+				last_error = ERR_FILE_EOF;
 			}
 			return;
 	}
 
-
-
-
 }
 
-Error FileAccessUnbuffered::_open(const String &p_path, int p_mode_flags) {
-
-	if (fd < 0)
-		::close(fd);
-	fd = -1;
+Error FileAccessUnbufferedUnix::_open(const String &p_path, int p_mode_flags) {
 
 	path_src = p_path;
 	path = fix_path(p_path);
 	//printf("opening %ls, %i\n", path.c_str(), Memory::get_static_mem_usage());
 
-	// If the FD is currently invalid, all good. We don't want to overwrite a valid FD by accident.
+	// If the fd is currently invalid, all good. We don't want to overwrite a valid fd by accident.
 	ERR_FAIL_COND_V(fd != -1, ERR_ALREADY_IN_USE);
 	int mode;
 
@@ -116,7 +114,11 @@ Error FileAccessUnbuffered::_open(const String &p_path, int p_mode_flags) {
 	}
 }
 
-void FileAccessUnbuffered::close() {
+Error FileAccessUnbufferedUnix::unbuffered_open(const String &p_path, int p_mode_flags) {
+	return this->_open(p_path, p_mode_flags);
+}
+
+void FileAccessUnbufferedUnix::close() {
 
 	if (fd < 0)
 		return;
@@ -140,22 +142,22 @@ void FileAccessUnbuffered::close() {
 	}
 }
 
-bool FileAccessUnbuffered::is_open() const {
+bool FileAccessUnbufferedUnix::is_open() const {
 
 	return (fd > 0);
 }
 
-String FileAccessUnbuffered::get_path() const {
+String FileAccessUnbufferedUnix::get_path() const {
 
 	return path_src;
 }
 
-String FileAccessUnbuffered::get_path_absolute() const {
+String FileAccessUnbufferedUnix::get_path_absolute() const {
 
 	return path;
 }
 
-void FileAccessUnbuffered::seek(size_t p_position) {
+void FileAccessUnbufferedUnix::seek(size_t p_position) {
 
 	ERR_FAIL_COND(fd < 0);
 	ERR_FAIL_COND(p_position < 0);
@@ -183,7 +185,7 @@ void FileAccessUnbuffered::seek(size_t p_position) {
 
 }
 
-void FileAccessUnbuffered::seek_end(int64_t p_position) {
+void FileAccessUnbufferedUnix::seek_end(int64_t p_position) {
 
 	ERR_FAIL_COND(fd < 0);
 	ERR_FAIL_COND(p_position > 0);
@@ -200,87 +202,79 @@ void FileAccessUnbuffered::seek_end(int64_t p_position) {
 	pos = new_pos;
 }
 
-size_t FileAccessUnbuffered::get_position() const {
+size_t FileAccessUnbufferedUnix::get_position() const {
 
 	ERR_FAIL_COND_V(fd < 0, 0);
 
 	long pos = ::lseek(fd, 0, SEEK_CUR);
-	if (pos < 0) {
-		check_errors();
-		ERR_FAIL_V(0);
-	}
-	return pos;
+	return check_errors(pos);
 }
 
-size_t FileAccessUnbuffered::get_len() const {
+size_t FileAccessUnbufferedUnix::get_len() const {
 
-	ERR_FAIL_COND_V(fd < 0, 0);
+	ERR_FAIL_COND_V(fd < 0, -1);
 
 	// long pos = ::lseek(fd, 0, SEEK_CUR);
 	// ERR_FAIL_COND_V(pos < 0, 0);
 	// ERR_FAIL_COND_V(::lseek(fd, 0, SEEK_END), 0);
 	struct stat st;
-	ERR_FAIL_COND_V(fstat(fd, &st) < 0, 0);
+	ERR_FAIL_COND_V(fstat(fd, &st) < 0, -1);
 	// ERR_FAIL_COND_V(fseek(f, pos, SEEK_SET), 0);
 
 	return st.st_size;
 }
 
-size_t FileAccessUnbuffered::get_len() {
-
-	ERR_FAIL_COND_V(fd < 0, 0);
-	ERR_FAIL_COND_V(fstat(fd, &st) < 0, 0);
-
-	return st.st_size;
-}
-
-bool FileAccessUnbuffered::eof_reached() const {
+bool FileAccessUnbufferedUnix::eof_reached() const {
 
 	return last_error == ERR_FILE_EOF;
 }
 
-uint8_t FileAccessUnbuffered::get_8() const {
+uint8_t FileAccessUnbufferedUnix::get_8() const {
 
-	ERR_FAIL_COND_V(fd < 0, 0);
+	CRASH_COND(fd < 0);
 	uint8_t b;
-	if (::read(fd, &b, 1) < 1) {
-		check_errors();
+	if (check_errors(read(fd, &b, 1)) == CS_MEM_VAL_BAD)
 		b = '\0';
-	}
 	return b;
 }
 
-int FileAccessUnbuffered::get_buffer(uint8_t *p_dst, int p_length) const {
+// int FileAccessUnbufferedUnix::get_buffer(uint8_t *p_dst, int p_length) const {
 
-	return get_buffer(p_dst, p_length);
-};
+// 	return get_buffer(p_dst, p_length);
+// };
 
-int FileAccessUnbuffered::get_buffer(uint8_t *p_dst, int p_length) {
+int FileAccessUnbufferedUnix::get_buffer(uint8_t *p_dst, int p_length) const {
 
 	// TODO: fix all.
-	ERR_FAIL_COND_V(fd < 0, -1);
-	int n_last_read = ::read(fd, p_dst, p_length);
-	check_errors();
-	return n_last_read;
+	// ERR_FAIL_COND_V(fd < 0, -1);
+	// int n_last_read = ::read(fd, p_dst, p_length);
+	// check_errors();
+	// return n_last_read;
+
+	int i = 0;
+	for (i = 0; i < p_length && !eof_reached(); i++)
+		p_dst[i] = get_8();
+
+	return i;
 };
 
-Error FileAccessUnbuffered::get_error() const {
+Error FileAccessUnbufferedUnix::get_error() const {
 
 	return last_error;
 }
 
-void FileAccessUnbuffered::store_8(uint8_t p_byte) {
+void FileAccessUnbufferedUnix::store_8(uint8_t p_byte) {
 
 	ERR_FAIL_COND(fd < 0);
 	ERR_FAIL_COND(write(fd, &p_byte, 1) != 1);
 }
 
-void FileAccessUnbuffered::store_buffer(const uint8_t *p_src, int p_length) {
+void FileAccessUnbufferedUnix::store_buffer(const uint8_t *p_src, int p_length) {
 	ERR_FAIL_COND(fd < 0);
 	ERR_FAIL_COND((int)write(fd, p_src, p_length) != p_length);
 }
 
-bool FileAccessUnbuffered::file_exists(const String &p_path) {
+bool FileAccessUnbufferedUnix::file_exists(const String &p_path) {
 
 	int err;
 	String filename = fix_path(p_path);
@@ -309,7 +303,7 @@ bool FileAccessUnbuffered::file_exists(const String &p_path) {
 	}
 }
 
-uint64_t FileAccessUnbuffered::_get_modified_time(const String &p_file) {
+uint64_t FileAccessUnbufferedUnix::_get_modified_time(const String &p_file) {
 
 	String file = fix_path(p_file);
 	int err = stat(file.utf8().get_data(), &st);
@@ -322,7 +316,7 @@ uint64_t FileAccessUnbuffered::_get_modified_time(const String &p_file) {
 	};
 }
 
-Error FileAccessUnbuffered::_chmod(const String &p_path, int p_mod) {
+Error FileAccessUnbufferedUnix::_chmod(const String &p_path, int p_mod) {
 	int err = chmod(p_path.utf8().get_data(), p_mod);
 	if (!err) {
 		return OK;
@@ -333,26 +327,26 @@ Error FileAccessUnbuffered::_chmod(const String &p_path, int p_mod) {
 
 
 // Flush does not make sense for unbuffered IO so it has only checks and does not actually do anything.
-void FileAccessUnbuffered::flush() {
+void FileAccessUnbufferedUnix::flush() {
 
 	ERR_FAIL_COND(fd < 0);
 
 }
 
-FileAccess *FileAccessUnbuffered::create_unbuf_unix() {
+FileAccess *FileAccessUnbufferedUnix::create_unbuf_unix() {
 
-	return memnew(FileAccessUnbuffered);
+	return memnew(FileAccessUnbufferedUnix);
 }
 
-CloseNotificationFunc FileAccessUnbuffered::close_notification_func = NULL;
+CloseNotificationFunc FileAccessUnbufferedUnix::close_notification_func = NULL;
 
-FileAccessUnbuffered::FileAccessUnbuffered() :
+FileAccessUnbufferedUnix::FileAccessUnbufferedUnix() :
 		fd(-1),
 		flags(0),
 		last_error(OK) {
 }
 
-FileAccessUnbuffered::~FileAccessUnbuffered() {
+FileAccessUnbufferedUnix::~FileAccessUnbufferedUnix() {
 
 	close();
 }
