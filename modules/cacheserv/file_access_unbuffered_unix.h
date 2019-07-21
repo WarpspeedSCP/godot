@@ -63,7 +63,7 @@ class 	FileAccessUnbufferedUnix : public FileAccess {
 	int flags;
     struct stat st;
 	void check_errors() const;
-	int check_errors(int val/* , int mode */) const;
+	int check_errors(int val /* , int mode */ ) const;
 	void check_errors(int val, int expected, int mode);
 	mutable Error last_error;
 	String save_path;

@@ -19,6 +19,7 @@ void FileAccessUnbufferedUnix::check_errors() const {}
 
 // Returns -1 if the value is less than 0 and the value otherwise.
 int FileAccessUnbufferedUnix::check_errors(int val) const {
+	ERR_PRINTS("Value is : " + itoh(val));
 	ERR_FAIL_COND_V(val < 0, -1);
 	return val;
 }
@@ -71,19 +72,19 @@ Error FileAccessUnbufferedUnix::_open(const String &p_path, int p_mode_flags) {
 	int mode;
 
 	if (p_mode_flags == READ)
-		mode = O_RDONLY | O_SYNC;
+		mode = O_RDONLY | O_SYNC | O_RSYNC | O_DSYNC;
 	else if (p_mode_flags == WRITE)
-		mode = O_WRONLY | O_TRUNC | O_CREAT | O_SYNC;
+		mode = O_WRONLY | O_TRUNC | O_CREAT | O_SYNC | O_RSYNC | O_DSYNC;
 	else if (p_mode_flags == READ_WRITE)
-		mode = O_RDWR | O_SYNC;
+		mode = O_RDWR | O_SYNC | O_RSYNC | O_DSYNC;
 	else if (p_mode_flags == WRITE_READ)
-		mode = O_RDWR | O_TRUNC | O_CREAT | O_SYNC;
+		mode = O_RDWR | O_TRUNC | O_CREAT | O_SYNC | O_RSYNC | O_DSYNC;
 	else
 		return ERR_INVALID_PARAMETER;
 
-	#ifdef O_DIRECT
-		mode |= O_DIRECT;
-	#endif
+	// #ifdef O_DIRECT
+	// 	mode |= O_DIRECT;
+	// #endif
 
 	//printf("opening %s as %s\n", p_path.utf8().get_data(), path.utf8().get_data());
 	int err = stat(path.utf8().get_data(), &st);
@@ -187,7 +188,7 @@ void FileAccessUnbufferedUnix::seek(size_t p_position) {
 
 void FileAccessUnbufferedUnix::seek_end(int64_t p_position) {
 
-	ERR_FAIL_COND(fd < 0);
+	CRASH_COND(fd < 0);
 	ERR_FAIL_COND(p_position > 0);
 	ERR_FAIL_COND((p_position + st.st_size) < 0);
 
@@ -204,7 +205,7 @@ void FileAccessUnbufferedUnix::seek_end(int64_t p_position) {
 
 size_t FileAccessUnbufferedUnix::get_position() const {
 
-	ERR_FAIL_COND_V(fd < 0, 0);
+	CRASH_COND(fd < 0);
 
 	long pos = ::lseek(fd, 0, SEEK_CUR);
 	return check_errors(pos);
@@ -212,13 +213,13 @@ size_t FileAccessUnbufferedUnix::get_position() const {
 
 size_t FileAccessUnbufferedUnix::get_len() const {
 
-	ERR_FAIL_COND_V(fd < 0, -1);
+	CRASH_COND(fd < 0);
 
 	// long pos = ::lseek(fd, 0, SEEK_CUR);
 	// ERR_FAIL_COND_V(pos < 0, 0);
 	// ERR_FAIL_COND_V(::lseek(fd, 0, SEEK_END), 0);
 	struct stat st;
-	ERR_FAIL_COND_V(fstat(fd, &st) < 0, -1);
+	CRASH_COND(fstat(fd, &st) < 0);
 	// ERR_FAIL_COND_V(fseek(f, pos, SEEK_SET), 0);
 
 	return st.st_size;
@@ -246,16 +247,15 @@ uint8_t FileAccessUnbufferedUnix::get_8() const {
 int FileAccessUnbufferedUnix::get_buffer(uint8_t *p_dst, int p_length) const {
 
 	// TODO: fix all.
-	// ERR_FAIL_COND_V(fd < 0, -1);
-	// int n_last_read = ::read(fd, p_dst, p_length);
-	// check_errors();
-	// return n_last_read;
+	CRASH_COND(fd < 0);
+	return check_errors(read(fd, p_dst, p_length));
 
-	int i = 0;
-	for (i = 0; i < p_length && !eof_reached(); i++)
-		p_dst[i] = get_8();
 
-	return i;
+	// int i = 0;
+	// for (i = 0; i < p_length && !eof_reached(); i++)
+	// 	p_dst[i] = get_8();
+
+	// return i;
 };
 
 Error FileAccessUnbufferedUnix::get_error() const {
@@ -265,13 +265,13 @@ Error FileAccessUnbufferedUnix::get_error() const {
 
 void FileAccessUnbufferedUnix::store_8(uint8_t p_byte) {
 
-	ERR_FAIL_COND(fd < 0);
-	ERR_FAIL_COND(write(fd, &p_byte, 1) != 1);
+	CRASH_COND(fd < 0);
+	CRASH_COND(write(fd, &p_byte, 1) != 1);
 }
 
 void FileAccessUnbufferedUnix::store_buffer(const uint8_t *p_src, int p_length) {
-	ERR_FAIL_COND(fd < 0);
-	ERR_FAIL_COND((int)write(fd, p_src, p_length) != p_length);
+	CRASH_COND(fd < 0);
+	CRASH_COND((int)write(fd, p_src, p_length) != p_length);
 }
 
 bool FileAccessUnbufferedUnix::file_exists(const String &p_path) {
@@ -312,7 +312,7 @@ uint64_t FileAccessUnbufferedUnix::_get_modified_time(const String &p_file) {
 		return st.st_mtime;
 	} else {
 		ERR_EXPLAIN("Failed to get modified time for: " + p_file);
-		ERR_FAIL_V(0);
+		ERR_FAIL_V(-1);
 	};
 }
 

@@ -145,7 +145,7 @@ void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, 
 
 	if ((offset + CS_PAGE_SIZE) < desc_info->total_size) {
 		if (check_incomplete_page_load(desc_info, curr_page, curr_frame, offset)) {
-			ERR_PRINTS("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.");
+			ERR_EXPLAIN("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.");
 			CRASH_NOW();
 		} else {
 			ERR_PRINTS("Read size : " + itoh(frames[curr_frame]->used_size));
@@ -184,6 +184,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 		used_size = desc_info->internal_data_source->get_buffer(
 				w.ptr(),
 				CS_PAGE_SIZE);
+		ERR_EXPLAIN("File read returned " + itoh(used_size));
 		CRASH_COND(used_size <= 0);
 		Frame::MetaWrite(
 				frames[curr_frame],
@@ -992,9 +993,9 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 	do {
 
-		//ERR_PRINT(("Thread" + itoh(fcs.thread->get_id())  +   "Waiting for message.").utf8().get_data());
+		ERR_PRINT(("Thread" + itoh(fcs.thread->get_id())  +   "Waiting for message.").utf8().get_data());
 		CtrlOp l = fcs.op_queue.pop();
-		//ERR_PRINT("got message");
+		ERR_PRINT("got message");
 		if (l.type == CtrlOp::QUIT) break;
 		// ERR_CONTINUE(l.di == NULL);
 		CRASH_COND(l.di == NULL);
@@ -1004,7 +1005,7 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 		switch (l.type) {
 			case CtrlOp::LOAD: {
-				//ERR_PRINT(("Performing load for offset " + itoh(l.offset) + "\nIn pages: " + itoh(CS_GET_PAGE(l.offset)) + "\nCurr page: " + itoh(curr_page) + "\nCurr frame: " + itoh(curr_frame)).utf8().get_data());
+				ERR_PRINT(("Performing load for offset " + itoh(l.offset) + "\nIn pages: " + itoh(CS_GET_PAGE(l.offset)) + "\nCurr page: " + itoh(curr_page) + "\nCurr frame: " + itoh(curr_frame)).utf8().get_data());
 				fcs.do_load_op(l.di, curr_page, curr_frame, l.offset);
 				break;
 			}
