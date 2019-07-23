@@ -82,10 +82,6 @@ Error FileAccessUnbufferedUnix::_open(const String &p_path, int p_mode_flags) {
 	else
 		return ERR_INVALID_PARAMETER;
 
-	// #ifdef O_DIRECT
-	// 	mode |= O_DIRECT;
-	// #endif
-
 	//printf("opening %s as %s\n", p_path.utf8().get_data(), path.utf8().get_data());
 	int err = stat(path.utf8().get_data(), &st);
 	if (!err) {

@@ -45,6 +45,7 @@
 
 #include "cacheserv_defines.h"
 
+// Int to hex string.
 _FORCE_INLINE_ String itoh(size_t num) {
 	char x[100];
 	snprintf(x, 100,"%lx\0", (unsigned long)num);

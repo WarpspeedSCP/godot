@@ -46,6 +46,12 @@
 #include "cacheserv_defines.h"
 #include "control_queue.h"
 
+#if defined(UNIX_ENABLED)
+typedef FileAccessUnbufferedUnix PreferredFileAccessType;
+#elif defined(WINDOWS_ENABLED)
+typedef FileAccessUnbufferedWindows PreferredFileAccessType;
+#endif
+
 /**
  *  A page is identified with a 64 bit GUID where the 24 most significant bits act as the
  *  differenciator. The 40 least significant bits represent the offset of the referred page
@@ -123,7 +129,33 @@ private:
 	// Returns true if the page at the current offset is already tracked.
 	// Adds the current page to the tracked list, maps it to a frame and returns false if not.
 	// Also sets the values of the given page and frame id args.
-	bool get_or_do_page_op(DescriptorInfo *desc_info, size_t offset, page_id *curr_page, frame_id *curr_frame);
+	bool get_or_do_page_op(DescriptorInfo *desc_info, size_t offset);
+
+	// Expects that the page at the given offset is in the cache.
+	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
+		WARN_PRINTS("Enqueueing load for file " + desc_info->abs_path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
+
+		if (offset > desc_info->total_size) {
+		// We can zero fill the current frame and return if the
+		// current page is higher than the size of the file, to
+		// prevent accidentally reading old data.
+		// Not sure if this can cause a deadlock yet.
+		// TODO: Investigate possible deadlocks.
+			WARN_PRINTS("Accessed out of bounds, reading zeroes.");
+			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->data_lock).ptr(), 0, CS_PAGE_SIZE);
+			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_ready_true(desc_info->sem, CS_GET_PAGE(offset), curr_frame);
+			WARN_PRINTS("Finished OOB access.");
+		} else {
+			op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
+
+		}
+
+	}
+
+	// Expects that the page at the given offset is in the cache.
+	void enqueue_store(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
+		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::STORE));
+	}
 
 protected:
 public:
@@ -224,7 +256,7 @@ public:
 
 	size_t read(const RID *const rid, void *const buffer, size_t length);
 	size_t write(const RID *const rid, const void *const data, size_t length);
-	size_t seek(const RID *const rid, size_t new_offset, int mode);
+	size_t seek(const RID *const rid, int64_t new_offset, int mode);
 
 	Variant _get_state() {
 
@@ -268,8 +300,6 @@ public:
 
 	// Error _chmod(const String &p_path, int p_mod) { return ERR_UNAVAILABLE; }
 
-	// Error reopen(const String &p_path, int p_mode_flags); ///< does not change the AccessType
-
 	// Returns an RID to an opened file.
 	RID open(const String &path, int p_mode, int cache_policy);
 
@@ -279,33 +309,7 @@ public:
 	// Invalidates the RID. it *will not* be valid after a call to this function.
 	void permanent_close(const RID *const rid);
 
-	Error reopen(const RID *const rid, int mode);
-
-	// Expects that the page at the given offset is in the cache.
-	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
-		WARN_PRINTS("Enqueueing load for file " + desc_info->abs_path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
-
-		if (offset > desc_info->total_size) {
-		// We can zero fill the current frame and return if the
-		// current page is higher than the size of the file, to
-		// prevent accidentally reading old data.
-		// Not sure if this can cause a deadlock yet.
-		// TODO: Investigate possible deadlocks.
-			WARN_PRINTS("Accessed out of bounds, reading zeroes.");
-			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->data_lock).ptr(), 0, CS_PAGE_SIZE);
-			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_ready_true(desc_info->sem, CS_GET_PAGE(offset), curr_frame);
-			WARN_PRINTS("Finished OOB access.");
-		} else {
-			op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
-
-		}
-
-	}
-
-	// Expects that the page at the given offset is in the cache.
-	void enqueue_store(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
-		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::STORE));
-	}
+	Error reopen(const RID *const rid, int mode); ///< does not change the AccessType
 
 	void lock();
 	void unlock();

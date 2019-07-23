@@ -28,29 +28,20 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-
 #ifndef FILE_ACCESS_UNBUF_UNIX_H
 #define FILE_ACCESS_UNBUF_UNIX_H
 
 #include "core/os/file_access.h"
 #include "core/os/memory.h"
 
-
 #include "data_helpers.h"
-
 
 #if defined(UNIX_ENABLED)
 
-#include <unistd.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
-
-typedef void (*CloseNotificationFunc)(const String &p_file, int p_flags);
-
-class 	FileAccessUnbufferedUnix : public FileAccess {
+class FileAccessUnbufferedUnix : public FileAccess {
 
 	enum CheckMode {
 		CHK_MODE_SEEK,
@@ -61,9 +52,9 @@ class 	FileAccessUnbufferedUnix : public FileAccess {
 	int fd;
 	int pos;
 	int flags;
-    struct stat st;
+	struct stat st;
 	void check_errors() const;
-	int check_errors(int val /* , int mode */ ) const;
+	int check_errors(int val /* , int mode */) const;
 	void check_errors(int val, int expected, int mode);
 	mutable Error last_error;
 	String save_path;
@@ -87,7 +78,6 @@ public:
 	virtual void seek(size_t p_position); ///< seek to a given position
 	virtual void seek_end(int64_t p_position = 0); ///< seek from the end of file
 	virtual size_t get_position() const; ///< get position in the file
-
 
 	virtual size_t get_len() const; ///< get size of the file
 	size_t get_len(); ///< Get size of file, updates internal stat struct if file sizew has changed.
