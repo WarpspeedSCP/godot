@@ -30,7 +30,7 @@
 
 #include "file_cache_manager.h"
 #include "file_access_cached.h"
-#include "file_access_unbuffered_unix.h"
+// #include "file_access_unbuffered_unix.h"
 
 #include "core/os/os.h"
 
@@ -38,7 +38,7 @@
 
 static const bool CS_TRUE = true;
 static const bool CS_FALSE = true;
-static uint8_t zero[CS_PAGE_SIZE] = { 0 };
+// static uint8_t zero[CS_PAGE_SIZE] = { 0 };
 #define RID_TO_DD(op) (size_t) rid op get_id() & 0x0000000000FFFFFF
 #define RID_PTR_TO_DD RID_TO_DD(->)
 #define RID_REF_TO_DD RID_TO_DD(.)
@@ -99,19 +99,21 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 
 	RID rid;
 
-	if(rids.has(path)) {
+	if (rids.has(path)) {
+		WARN_PRINTS("file already exists, reopening.");
+
 		rid = rids[path];
+		DescriptorInfo *desc_info = files[rid.get_id() & 0x0000000000FFFFFF];
 
 		ERR_COND_ACTION(
-			files[rid.get_id() & 0x0000000000FFFFFF]->valid,
-			String("This file is already open."),
-			{ return RID(); }
-		);
+				desc_info->valid,
+				String("This file is already open."),
+				{ return RID(); });
+		CRASH_COND(desc_info->internal_data_source->is_open());
 
-		seek(rid, 0);
-
-
-
+		desc_info->valid = true;
+		desc_info->internal_data_source->open(desc_info->path, p_mode);
+		seek(rid, files[rid.get_id() & 0x0000000000FFFFFF]->offset);
 
 	} else {
 		// Will be freed when close is called with the corresponding RID.
@@ -120,10 +122,11 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 
 		ERR_COND_ACTION(!rid.is_valid(), String("Failed to create RID."), { memdelete(hdl); return RID(); });
 
-
-		PreferredFileAccessType *fa = memnew(FileAccessUnbufferedUnix);
-		//Fail with a bad RID if we can't open the file.
-		ERR_COND_ACTION(fa->unbuffered_open(path, p_mode) != OK, String("Failed to open file."), { memdelete(hdl); return RID(); });
+		// PreferredFileAccessType *fa = memnew(FileAccessUnbufferedUnix);
+		// //Fail with a bad RID if we can't open the file.
+		// ERR_COND_ACTION(fa->unbuffered_open(path, p_mode) != OK, String("Failed to open file."), { memdelete(hdl); return RID(); });
+		FileAccess *fa = NULL;
+		CRASH_COND((fa = FileAccess::open(path, p_mode)) == NULL);
 
 		rids[path] = (add_data_source(rid, fa, cache_policy));
 		WARN_PRINTS("open file " + path + " with mode " + itoh(p_mode) + "\nGot RID " + itoh(RID_REF_TO_DD) + "\n");
@@ -132,7 +135,7 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 	return rid;
 }
 
-void FileCacheManager::close(RID rid) {
+void FileCacheManager::close(const RID rid) {
 
 	// TODO: Determine if this is necessary.
 	// MutexLock ml(mutex);
@@ -147,16 +150,15 @@ void FileCacheManager::close(RID rid) {
 	desc_info->internal_data_source->close();
 }
 
-void FileCacheManager::permanent_close(RID rid) {
+void FileCacheManager::permanent_close(const RID rid) {
 	WARN_PRINTS("permanently closed file with RID " + itoh(RID_REF_TO_DD));
 	MutexLock ml = MutexLock(mutex);
-	data_descriptor dd = RID_REF_TO_DD;
 	remove_data_source(rid);
 	handle_owner.free(rid);
 	memdelete(rid.get_data());
 }
 
-Error FileCacheManager::reopen(RID rid, int mode) {
+Error FileCacheManager::reopen(const RID rid, int mode) {
 	DescriptorInfo *di = files[RID_REF_TO_DD];
 	if (!di->valid) {
 		di->valid = true;
@@ -180,6 +182,7 @@ RID FileCacheManager::add_data_source(RID rid, FileAccess *data_source, int cach
 	data_descriptor dd = RID_REF_TO_DD;
 
 	files[dd] = memnew(DescriptorInfo(data_source, (size_t)dd << 40, cache_policy));
+	files[dd]->valid = true;
 	WARN_PRINTS(files[dd]->path);
 	const data_descriptor *key = files.next(NULL);
 	for (; key; key = files.next(key)) {
@@ -193,25 +196,26 @@ RID FileCacheManager::add_data_source(RID rid, FileAccess *data_source, int cach
 }
 
 void FileCacheManager::remove_data_source(RID rid) {
-		DescriptorInfo *di = files[rid.get_id() & 0x0000000000FFFFFF];
-		for (int i = 0; i < di->pages.size(); i++) {
-			Frame::MetaWrite(
-					frames[page_frame_map[di->pages[i]]],
-					di->meta_lock)
-					.set_used(false)
-					.set_ready_false();
-			memset(
-					Frame::DataWrite(
-							frames[page_frame_map[di->pages[i]]],
-							di->sem,
-							di->data_lock)
-							.ptr(),
-					0,
-					4096);
-		}
-		rids.erase(di->path);
-		files.erase(di->guid_prefix >> 40);
-		memdelete(di);
+	DescriptorInfo *di = files[rid.get_id() & 0x0000000000FFFFFF];
+	for (int i = 0; i < di->pages.size(); i++) {
+		Frame::MetaWrite(
+				frames[page_frame_map[di->pages[i]]],
+				di->meta_lock)
+				.set_used(false)
+				.set_ready_false();
+		memset(
+				Frame::DataWrite(
+						frames[page_frame_map[di->pages[i]]],
+						di->sem,
+						di->data_lock)
+						.ptr(),
+				0,
+				4096);
+	}
+	rids.erase(di->path);
+	files.erase(di->guid_prefix >> 40);
+	memdelete(di->internal_data_source);
+	memdelete(di);
 }
 
 // !!! takes mutable references to all params.
@@ -307,7 +311,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo
 }
 
 // Perform a read operation.
-size_t FileCacheManager::read(RID rid, void *const buffer, size_t length) {
+size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) {
 
 	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
 
@@ -425,7 +429,7 @@ size_t FileCacheManager::read(RID rid, void *const buffer, size_t length) {
 }
 
 // Similar to the read operation but opposite data flow.
-size_t FileCacheManager::write(RID rid, const void *const data, size_t length) {
+size_t FileCacheManager::write(const RID rid, const void *const data, size_t length) {
 	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
 	// TODO: Copy on write functionality for OOB writes.
 
@@ -532,7 +536,7 @@ size_t FileCacheManager::write(RID rid, const void *const data, size_t length) {
 }
 
 // The seek operation just uses the POSIX seek modes, which will probably get replaced later.
-size_t FileCacheManager::seek(RID rid, int64_t new_offset, int mode) {
+size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 
 	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
 
@@ -565,46 +569,54 @@ size_t FileCacheManager::seek(RID rid, int64_t new_offset, int mode) {
 		return CS_MEM_VAL_BAD;
 	}
 
-	if (eff_offset - curr_offset > CS_FIFO_THRESH_DEFAULT) {
-		/** when the user seeks far away from the current offset,
-			 * if the io queue currently has pending operations, maybe
-			 * we can clear the queue. That way, we can read ahead at the
-			 * new offset without any waits, and we only need to do an
-			 * inexpensive page replacement operation instead of waiting
-			 * for a load to occur.
-			*/
-		CtrlOp l;
-		// This executes on the main thread.
-		// Lock the operation queue to prevent the remaining pages from loading.
-		if (!op_queue.queue.empty()) {
-			op_queue.lock();
-			WARN_PRINT("Acquired client side queue lock.");
-			while (!op_queue.queue.empty()) {
-				// If the next operation is  a load op, we can remove it from the op queue.
-				if (op_queue.queue.front()->get().type == CtrlOp::LOAD)
-					l = op_queue.pop();
-				else {
-					// FIXME: Does this actually work?
+	/**
+		 * when the user seeks far away from the current offset,
+		 * if the io queue currently has pending operations,
+		 * maybe we can clear the queue of operations that affect
+		 * our current file (and only those operations). That way, we can read ahead at the
+		 * new offset without any waits, and we only need to
+		 * do an inexpensive page replacement operation instead
+		 * of waiting for a load to occur.
+		 */
+	// This executes on the main thread.
+	if (!op_queue.queue.empty()) {
+		// Lock the operation queue to prevent the IO thread from consuming any more pages.
+		op_queue.lock();
+		WARN_PRINT("Acquired client side queue lock.");
+		// Look for load ops with the same file that are farther than a threshold distance away from our effective offset and remove them.
+		for (List<CtrlOp>::Element *i = op_queue.queue.front(); i; i = i->next()) {
+			if (
+					// If the type of operation is a load...
+					i->get().type == CtrlOp::LOAD &&
+					// And the operation is being performed on the same file...
+					i->get().di->guid_prefix == desc_info->guid_prefix &&
+					// And the distance between the pages
+					// in the vicinity of the new region
+					// and the current offset is large enough...
+					ABSDIFF(
+							eff_offset + (CS_FIFO_THRESH_DEFAULT * CS_PAGE_SIZE / 2),
+							i->get().offset) > CS_FIFO_THRESH_DEFAULT) {
 
-					// If the next operation is a store op, we must allow the IO thread to perform the operation.
-					op_queue.unlock();
-					// Hopefully this will allow the IO thread to acquire the lock before the statement below is executed.
-					op_queue.lock();
-					// At this point, the IO thread should have popped the store op off the queue.
-					// We can now continue to the next iteration.
-					continue;
-				}
-				WARN_PRINTS("Unmapping page " + itoh(CS_GET_PAGE(l.offset)) + " and frame " + itoh(l.frame));
+				CtrlOp l = i->get();
+				i->erase();
+				// We can unmap the pages.
+				WARN_PRINTS(
+						"Unmapping out of range page " +
+						itoh(CS_GET_PAGE(l.offset)) +
+						" and frame " + itoh(l.frame) +
+						" for file with RID " +
+						itoh(rid.get_id()));
+
 				l.di->pages.erase(CS_GET_PAGE(l.offset));
-				page_frame_map.erase(CS_GET_PAGE(l.offset));
 				// Run the right cache removal policy function.
 				CS_GET_CACHE_POLICY_FN(cache_removal_policies, desc_info->cache_policy)
 				(desc_info->guid_prefix | CS_GET_PAGE(l.offset));
+				page_frame_map.erase(CS_GET_PAGE(l.offset));
 				Frame::MetaWrite(frames[l.frame], l.di->meta_lock).set_used(false).set_ready_false();
 			}
-			WARN_PRINT("Released client side queue lock.");
-			op_queue.unlock();
 		}
+		WARN_PRINT("Released client side queue lock.");
+		op_queue.unlock();
 	}
 
 	// Update the offset.
@@ -613,7 +625,7 @@ size_t FileCacheManager::seek(RID rid, int64_t new_offset, int mode) {
 	return eff_offset;
 }
 
-void FileCacheManager::flush(RID rid) {
+void FileCacheManager::flush(const RID rid) {
 
 	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
 
@@ -635,7 +647,7 @@ void FileCacheManager::flush(RID rid) {
 	}
 }
 
-size_t FileCacheManager::get_len(RID rid) const {
+size_t FileCacheManager::get_len(const RID rid) const {
 
 	DescriptorInfo *const *elem = files.getptr(RID_REF_TO_DD);
 
@@ -658,11 +670,11 @@ bool FileCacheManager::file_exists(const String &p_name) const {
 	return exists;
 }
 
-bool FileCacheManager::eof_reached(RID rid) const {
+bool FileCacheManager::eof_reached(const RID rid) const {
 
 	DescriptorInfo *const *elem = files.getptr(RID_REF_TO_DD);
 
-	ERR_FAIL_COND_MSG(!elem, String("No such file"))
+	ERR_FAIL_COND_MSG_V(!elem, String("No such file"), true);
 
 	bool eof = (*elem)->internal_data_source->eof_reached();
 	return eof;
@@ -1036,7 +1048,22 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 	do {
 
-		ERR_PRINT(("Thread" + itoh(fcs.thread->get_id()) + "Waiting for message.").utf8().get_data());
+		// ERR_PRINTS("Thread" + itoh(fcs.thread->get_id()) + "Waiting for message.");
+		{
+			_err_print_error(
+				FUNCTION_STR,
+				__FILE__,
+				__LINE__,
+				String(
+					"Thread" +
+					itoh(
+						fcs.thread->get_id()
+						) +
+					"Waiting for message."
+				).utf8().get_data()
+			);
+			_err_error_exists = false;
+		}
 		CtrlOp l = fcs.op_queue.pop();
 		ERR_PRINT("got message");
 		if (l.type == CtrlOp::QUIT) break;
@@ -1062,7 +1089,7 @@ void FileCacheManager::thread_func(void *p_udata) {
 	} while (!fcs.exit_thread);
 }
 
-void FileCacheManager::check_cache(RID rid, size_t length) {
+void FileCacheManager::check_cache(const RID rid, size_t length) {
 
 	DescriptorInfo *desc_info = files[RID_REF_TO_DD];
 	if (length == CS_LEN_UNSPECIFIED) length = 8 * CS_PAGE_SIZE;

@@ -46,11 +46,11 @@
 #include "cacheserv_defines.h"
 #include "control_queue.h"
 
-#if defined(UNIX_ENABLED)
-typedef FileAccessUnbufferedUnix PreferredFileAccessType;
-#elif defined(WINDOWS_ENABLED)
-typedef FileAccessUnbufferedWindows PreferredFileAccessType;
-#endif
+// #if defined(UNIX_ENABLED)
+// typedef FileAccessUnbufferedUnix PreferredFileAccessType;
+// #elif defined(WINDOWS_ENABLED)
+// typedef FileAccessUnbufferedWindows PreferredFileAccessType;
+// #endif
 
 /**
  *  A page is identified with a 64 bit GUID where the 24 most significant bits act as the
