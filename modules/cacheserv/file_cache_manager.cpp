@@ -79,14 +79,93 @@ FileCacheManager::~FileCacheManager() {
 		memdelete(frames[i]);
 	}
 
-	this->op_queue.sig_quit = true;
-	this->op_queue.push(CtrlOp());
-	this->exit_thread = true;
+	op_queue.sig_quit = true;
+	op_queue.push(CtrlOp());
+	exit_thread = true;
+
 	Thread::wait_to_finish(this->thread);
-	//Thread::wait_to_finish(this->th2);
+
 	memdelete(thread);
-	//memdelete(th2);
-	memdelete(this->mutex);
+	memdelete(mutex);
+}
+
+RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
+
+	WARN_PRINTS(path + " " + itoh(p_mode));
+
+	ERR_FAIL_COND_V(path.empty(), RID());
+
+	MutexLock ml = MutexLock(mutex);
+
+	RID rid;
+
+	if(rids.has(path)) {
+		rid = rids[path];
+
+		ERR_COND_ACTION(
+			files[rid.get_id() & 0x0000000000FFFFFF]->valid,
+			String("This file is already open."),
+			{ return RID(); }
+		);
+
+		seek(rid, 0);
+
+
+
+
+	} else {
+		// Will be freed when close is called with the corresponding RID.
+		CachedResourceHandle *hdl = memnew(CachedResourceHandle);
+		rid = handle_owner.make_rid(hdl);
+
+		ERR_COND_ACTION(!rid.is_valid(), String("Failed to create RID."), { memdelete(hdl); return RID(); });
+
+
+		PreferredFileAccessType *fa = memnew(FileAccessUnbufferedUnix);
+		//Fail with a bad RID if we can't open the file.
+		ERR_COND_ACTION(fa->unbuffered_open(path, p_mode) != OK, String("Failed to open file."), { memdelete(hdl); return RID(); });
+
+		rids[path] = (add_data_source(rid, fa, cache_policy));
+		WARN_PRINTS("open file " + path + " with mode " + itoh(p_mode) + "\nGot RID " + itoh(RID_REF_TO_DD) + "\n");
+	}
+
+	return rid;
+}
+
+void FileCacheManager::close(RID rid) {
+
+	// TODO: Determine if this is necessary.
+	// MutexLock ml(mutex);
+
+	DescriptorInfo *const *elem = files.getptr(RID_REF_TO_DD);
+
+	ERR_FAIL_COND_MSG(!elem, String("No such file"))
+
+	DescriptorInfo *desc_info = *elem;
+
+	desc_info->valid = false;
+	desc_info->internal_data_source->close();
+}
+
+void FileCacheManager::permanent_close(RID rid) {
+	WARN_PRINTS("permanently closed file with RID " + itoh(RID_REF_TO_DD));
+	MutexLock ml = MutexLock(mutex);
+	data_descriptor dd = RID_REF_TO_DD;
+	remove_data_source(rid);
+	handle_owner.free(rid);
+	memdelete(rid.get_data());
+}
+
+Error FileCacheManager::reopen(RID rid, int mode) {
+	DescriptorInfo *di = files[RID_REF_TO_DD];
+	if (!di->valid) {
+		di->valid = true;
+		return di->internal_data_source->reopen(di->path, mode);
+
+	} else {
+		return di->internal_data_source->reopen(di->path, mode);
+		// FIXME: BAD SIDE EFFECTS OF CHANGING FILE MODES!!!
+	}
 }
 
 /**
@@ -95,13 +174,13 @@ FileCacheManager::~FileCacheManager() {
  * so anything that implements the FileAccess API (from the file system, or from the network)
  * can act as a data source.
  */
-data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_source, int cache_policy) {
+RID FileCacheManager::add_data_source(RID rid, FileAccess *data_source, int cache_policy) {
 
-	CRASH_COND(rid->is_valid() == false);
-	data_descriptor dd = RID_PTR_TO_DD;
+	CRASH_COND(rid.is_valid() == false);
+	data_descriptor dd = RID_REF_TO_DD;
 
 	files[dd] = memnew(DescriptorInfo(data_source, (size_t)dd << 40, cache_policy));
-	WARN_PRINTS(files[dd]->abs_path);
+	WARN_PRINTS(files[dd]->path);
 	const data_descriptor *key = files.next(NULL);
 	for (; key; key = files.next(key)) {
 		printf("\t\t%lx\n", files[*key]);
@@ -110,12 +189,11 @@ data_descriptor FileCacheManager::add_data_source(RID *rid, FileAccess *data_sou
 	seek(rid, 0, SEEK_SET);
 	check_cache(rid, (cache_policy == _FileCacheManager::KEEP ? CS_KEEP_THRESH_DEFAULT : cache_policy == _FileCacheManager::LRU ? CS_LRU_THRESH_DEFAULT : CS_FIFO_THRESH_DEFAULT) * CS_PAGE_SIZE);
 
-	return dd;
+	return rid;
 }
 
-void FileCacheManager::remove_data_source(data_descriptor dd) {
-	if (files.has(dd)) {
-		DescriptorInfo *di = files[dd];
+void FileCacheManager::remove_data_source(RID rid) {
+		DescriptorInfo *di = files[rid.get_id() & 0x0000000000FFFFFF];
 		for (int i = 0; i < di->pages.size(); i++) {
 			Frame::MetaWrite(
 					frames[page_frame_map[di->pages[i]]],
@@ -131,10 +209,9 @@ void FileCacheManager::remove_data_source(data_descriptor dd) {
 					0,
 					4096);
 		}
-
-		memdelete(files[dd]);
-		files.erase(dd);
-	}
+		rids.erase(di->path);
+		files.erase(di->guid_prefix >> 40);
+		memdelete(di);
 }
 
 // !!! takes mutable references to all params.
@@ -143,7 +220,7 @@ void FileCacheManager::remove_data_source(data_descriptor dd) {
 void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
 	// Get data from data source somehow...
 
-	if(!desc_info->valid) {
+	if (!desc_info->valid) {
 		ERR_EXPLAIN("File not open!")
 		// CRASH_NOW()//(!desc_info->valid)
 	}
@@ -203,7 +280,6 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 	}
 	ERR_PRINTS("Loaded " + itoh(used_size) + " from offset " + itoh(offset) + " with page " + itoh(curr_page) + " mapped to frame " + itoh(curr_frame))
 	return (used_size < CS_PAGE_SIZE);
-
 }
 
 // !!! takes mutable references to all params.
@@ -216,9 +292,9 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 // This operation updates the used_size value of the page holder.
 _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
 
-	if(!desc_info->valid) {
+	if (!desc_info->valid) {
 		ERR_EXPLAIN("File not open!")
-		CRASH_NOW()//(!desc_info->valid)
+		CRASH_NOW() //(!desc_info->valid)
 	}
 
 	desc_info->internal_data_source->seek(CS_GET_PAGE(offset));
@@ -231,9 +307,9 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo
 }
 
 // Perform a read operation.
-size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t length) {
+size_t FileCacheManager::read(RID rid, void *const buffer, size_t length) {
 
-	DescriptorInfo **elem = files.getptr(RID_PTR_TO_DD);
+	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
 
 	ERR_FAIL_COND_MSG_V(!elem, String("No such file"), CS_MEM_VAL_BAD)
 
@@ -349,8 +425,8 @@ size_t FileCacheManager::read(const RID *const rid, void *const buffer, size_t l
 }
 
 // Similar to the read operation but opposite data flow.
-size_t FileCacheManager::write(const RID *const rid, const void *const data, size_t length) {
-	DescriptorInfo **elem = files.getptr(RID_PTR_TO_DD);
+size_t FileCacheManager::write(RID rid, const void *const data, size_t length) {
+	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
 	// TODO: Copy on write functionality for OOB writes.
 
 	ERR_FAIL_COND_MSG_V(!elem, String("No such file"), CS_MEM_VAL_BAD)
@@ -456,9 +532,9 @@ size_t FileCacheManager::write(const RID *const rid, const void *const data, siz
 }
 
 // The seek operation just uses the POSIX seek modes, which will probably get replaced later.
-size_t FileCacheManager::seek(const RID *const rid, int64_t new_offset, int mode) {
+size_t FileCacheManager::seek(RID rid, int64_t new_offset, int mode) {
 
-	DescriptorInfo **elem = files.getptr(RID_PTR_TO_DD);
+	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
 
 	ERR_FAIL_COND_MSG_V(!elem, String("No such file"), CS_MEM_VAL_BAD)
 
@@ -537,9 +613,9 @@ size_t FileCacheManager::seek(const RID *const rid, int64_t new_offset, int mode
 	return eff_offset;
 }
 
-void FileCacheManager::flush(const RID *const rid) {
+void FileCacheManager::flush(RID rid) {
 
-	DescriptorInfo **elem = files.getptr(RID_PTR_TO_DD);
+	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
 
 	ERR_FAIL_COND_MSG(!elem, String("No such file"))
 
@@ -559,11 +635,11 @@ void FileCacheManager::flush(const RID *const rid) {
 	}
 }
 
-size_t FileCacheManager::get_len(const RID *const rid) const {
+size_t FileCacheManager::get_len(RID rid) const {
 
-	DescriptorInfo *const *elem = files.getptr(RID_PTR_TO_DD);
+	DescriptorInfo *const *elem = files.getptr(RID_REF_TO_DD);
 
-	ERR_FAIL_COND_MSG(!elem, String("No such file"))
+	ERR_FAIL_COND_MSG_V(!elem, String("No such file"), -1);
 
 	DescriptorInfo *desc_info = *elem;
 
@@ -575,30 +651,6 @@ size_t FileCacheManager::get_len(const RID *const rid) const {
 	return size;
 }
 
-RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
-
-	WARN_PRINTS(path + " " + itoh(p_mode));
-
-	CRASH_COND(!mutex);
-	ERR_FAIL_COND_V(path.empty(), RID());
-
-	MutexLock ml = MutexLock(mutex);
-
-	// Will be freed when close is called with the corresponding RID.
-	CachedResourceHandle *hdl = memnew(CachedResourceHandle);
-	RID rid = handle_owner.make_rid(hdl);
-
-	ERR_FAIL_COND_V(!rid.is_valid(), RID());
-	PreferredFileAccessType *fa = memnew(FileAccessUnbufferedUnix);
-	//Fail with a bad RID if we can't open the file.
-	ERR_FAIL_COND_V(fa->unbuffered_open(path, p_mode) != OK, RID());
-
-	add_data_source(&rid, fa, cache_policy);
-	WARN_PRINTS("open file " + path + " with mode " + itoh(p_mode) + "\nGot RID " + itoh(RID_REF_TO_DD) + "\n");
-
-	return rid;
-}
-
 bool FileCacheManager::file_exists(const String &p_name) const {
 	FileAccess *f = FileAccess::create(FileAccess::ACCESS_FILESYSTEM);
 	bool exists = f->file_exists(p_name);
@@ -606,9 +658,9 @@ bool FileCacheManager::file_exists(const String &p_name) const {
 	return exists;
 }
 
-bool FileCacheManager::eof_reached(const RID *const rid) const {
+bool FileCacheManager::eof_reached(RID rid) const {
 
-	DescriptorInfo *const *elem = files.getptr(RID_PTR_TO_DD);
+	DescriptorInfo *const *elem = files.getptr(RID_REF_TO_DD);
 
 	ERR_FAIL_COND_MSG(!elem, String("No such file"))
 
@@ -947,43 +999,6 @@ bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offse
 	return ret;
 }
 
-void FileCacheManager::close(const RID *const rid) {
-
-	// TODO: Determine if this is necessary.
-	// MutexLock ml(mutex);
-
-	DescriptorInfo *const *elem = files.getptr(RID_PTR_TO_DD);
-
-	ERR_FAIL_COND_MSG(!elem, String("No such file"))
-
-	DescriptorInfo *desc_info = *elem;
-
-
-	desc_info->valid = false;
-	desc_info->internal_data_source->close();
-}
-
-void FileCacheManager::permanent_close(const RID *const rid) {
-	WARN_PRINTS("permanently closed file with RID " + itoh(RID_PTR_TO_DD));
-	MutexLock ml = MutexLock(mutex);
-	data_descriptor dd = RID_PTR_TO_DD;
-	handle_owner.free(*rid);
-	memdelete(rid->get_data());
-	remove_data_source(dd);
-}
-
-Error FileCacheManager::reopen(const RID *const rid, int mode) {
-	DescriptorInfo *di = files[RID_PTR_TO_DD];
-	if (!di->valid) {
-		di->valid = true;
-		return di->internal_data_source->reopen(di->abs_path, mode);
-
-	} else {
-		return di->internal_data_source->reopen(di->abs_path, mode);
-		// FIXME: BAD SIDE EFFECTS OF CHANGING FILE MODES!!!
-	}
-}
-
 FileCacheManager *FileCacheManager::singleton = NULL;
 _FileCacheManager *_FileCacheManager::singleton = NULL;
 
@@ -1047,9 +1062,9 @@ void FileCacheManager::thread_func(void *p_udata) {
 	} while (!fcs.exit_thread);
 }
 
-void FileCacheManager::check_cache(const RID *const rid, size_t length) {
+void FileCacheManager::check_cache(RID rid, size_t length) {
 
-	DescriptorInfo *desc_info = files[RID_PTR_TO_DD];
+	DescriptorInfo *desc_info = files[RID_REF_TO_DD];
 	if (length == CS_LEN_UNSPECIFIED) length = 8 * CS_PAGE_SIZE;
 
 	for (int i = CS_GET_PAGE(desc_info->offset); i < CS_GET_PAGE(desc_info->offset + length) + CS_PAGE_SIZE; i += CS_PAGE_SIZE) {

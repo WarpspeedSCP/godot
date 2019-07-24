@@ -100,6 +100,7 @@ class FileCacheManager : public Object {
 
 public:
 	Vector<Frame *> frames;
+	HashMap<String, RID> rids;
 	HashMap<uint32_t, DescriptorInfo *> files;
 	Map<page_id, frame_id> page_frame_map;
 	Set<page_id, LRUComparator> lru_cached_pages;
@@ -118,8 +119,8 @@ private:
 	/**
 	 * Register a file handle with the cache manager. This function takes a pointer to a FileAccess object,  so anything that implements the FileAccess API (from the file system, or from the network)  can act as a data source.
 	 */
-	data_descriptor add_data_source(RID *rid, FileAccess *data_source, int cache_policy);
-	void remove_data_source(data_descriptor dd);
+	RID add_data_source(RID rid, FileAccess *data_source, int cache_policy);
+	void remove_data_source(RID rid);
 
 	bool check_incomplete_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 	bool check_incomplete_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
@@ -133,7 +134,7 @@ private:
 
 	// Expects that the page at the given offset is in the cache.
 	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
-		WARN_PRINTS("Enqueueing load for file " + desc_info->abs_path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
+		WARN_PRINTS("Enqueueing load for file " + desc_info->path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
 
 		if (offset > desc_info->total_size) {
 		// We can zero fill the current frame and return if the
@@ -254,9 +255,9 @@ public:
 	FileCacheManager();
 	~FileCacheManager();
 
-	size_t read(const RID *const rid, void *const buffer, size_t length);
-	size_t write(const RID *const rid, const void *const data, size_t length);
-	size_t seek(const RID *const rid, int64_t new_offset, int mode);
+	size_t read(RID rid, void *const buffer, size_t length);
+	size_t write(RID rid, const void *const data, size_t length);
+	size_t seek(RID rid, int64_t new_offset, int mode);
 
 	Variant _get_state() {
 
@@ -277,22 +278,22 @@ public:
 	Error init();
 
 	// Checks that all required pages are loaded and enqueues uncached pages for loading.
-	void check_cache(const RID *const rid, size_t length);
+	void check_cache(RID rid, size_t length);
 
 	bool is_open() const; ///< true when file is open
 
-	String get_path(const RID *const rid) const; /// returns the path for the current open file
-	String get_path_absolute(const RID *const rid); /// returns the absolute path for the current open file
+	String get_path(RID rid) const; /// returns the path for the current open file
+	String get_path_absolute(RID rid); /// returns the absolute path for the current open file
 
-	void seek(const RID *const rid, size_t p_position) { seek(rid, p_position, SEEK_SET); } ///< seek to a given position
-	void seek_end(const RID *const rid, int64_t p_position) { seek(rid, p_position, SEEK_END); } ///< seek from the end of file
-	size_t get_position(const RID *const rid) const { return files[rid->get_id()]->offset; } ///< get position in the file
-	size_t get_len(const RID *const rid) const; ///< get size of the file
+	void seek(RID rid, size_t p_position) { seek(rid, p_position, SEEK_SET); } ///< seek to a given position
+	void seek_end(RID rid, int64_t p_position) { seek(rid, p_position, SEEK_END); } ///< seek from the end of file
+	size_t get_position(RID rid) const { return files[rid.get_id()]->offset; } ///< get position in the file
+	size_t get_len(RID rid) const; ///< get size of the file
 
-	bool eof_reached(const RID *const rid) const; ///< reading passed EOF
+	bool eof_reached(RID rid) const; ///< reading passed EOF
 
 	// Flush cache to disk.
-	void flush(const RID *const rid);
+	void flush(RID rid);
 
 	bool file_exists(const String &p_name) const; ///< return true if a file exists
 
@@ -304,12 +305,12 @@ public:
 	RID open(const String &path, int p_mode, int cache_policy);
 
 	// Close the file but keep its contents in the cache. None of the state information is invalidated.
-	void close(const RID *const rid);
+	void close(RID rid);
 
 	// Invalidates the RID. it *will not* be valid after a call to this function.
-	void permanent_close(const RID *const rid);
+	void permanent_close(RID rid);
 
-	Error reopen(const RID *const rid, int mode); ///< does not change the AccessType
+	Error reopen(RID rid, int mode); ///< does not change the AccessType
 
 	void lock();
 	void unlock();
