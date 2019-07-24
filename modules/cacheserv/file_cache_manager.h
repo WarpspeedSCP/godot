@@ -169,64 +169,17 @@ public:
 	void rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
 	void rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
 
-	void rmp_lru(page_id curr_page) {
-		WARN_PRINTS("Removing LRU page " + itoh(curr_page));
-		if (lru_cached_pages.find(curr_page) != NULL)
-			lru_cached_pages.erase(curr_page);
-	}
+	void rmp_lru(page_id curr_page);
+	void rmp_fifo(page_id curr_page);
+	void rmp_keep(page_id curr_page);
 
-	void rmp_fifo(page_id curr_page) {
-		WARN_PRINTS("Removing FIFO page " + itoh(curr_page));
-		if(fifo_cached_pages.find(curr_page) != NULL)
-			fifo_cached_pages.erase(curr_page);
-	}
+	void ip_lru(page_id curr_page);
+	void ip_fifo(page_id curr_page);
+	void ip_keep(page_id curr_page);
 
-	void rmp_keep(page_id curr_page) {
-		WARN_PRINTS("Removing permanent page " + itoh(curr_page));
-		if(permanent_cached_pages.find(curr_page) != NULL)
-			permanent_cached_pages.erase(curr_page);
-	}
-
-	void ip_lru(page_id curr_page) {
-		printf("#########################################\n ip_lru START\n");
-		WARN_PRINT("LRU cached.");
-		lru_cached_pages.insert(curr_page);
-		printf(" ip_lru END\n#########################################\n");
-	}
-	void ip_fifo(page_id curr_page) {
-		printf("#########################################\n ip_fifo START\n");
-		WARN_PRINT("FIFO cached.");
-		fifo_cached_pages.push_front(curr_page);
-		printf(" ip_fifo END\n#########################################\n");
-	}
-	void ip_keep(page_id curr_page) {
-		printf("#########################################\n ip_keep START\n");
-		WARN_PRINT("Permanent cached.");
-		permanent_cached_pages.insert(curr_page);
-		printf(" ip_keep END\n#########################################\n");
-	}
-
-	void up_lru(page_id curr_page) {
-		printf("#########################################\n up_lru START\n");
-		WARN_PRINT(("Updating LRU page " + itoh(curr_page)).utf8().get_data());
-		lru_cached_pages.erase(curr_page);
-		Frame::MetaWrite(frames[page_frame_map[curr_page]], files[curr_page >> 40]->meta_lock).set_last_use(step);
-		lru_cached_pages.insert(curr_page);
-		printf(" up_lru END\n#########################################\n");
-	}
-	void up_fifo(page_id curr_page) {
-		printf("#########################################\n up_fifo START\n");
-		WARN_PRINT(("Updating FIFO page " + itoh(curr_page)).utf8().get_data());
-		printf(" up_fifo END\n#########################################\n");
-	}
-	void up_keep(page_id curr_page) {
-		printf("#########################################\n up_keep START\n");
-		WARN_PRINT(("Updating Permanent page " + itoh(curr_page)).utf8().get_data());
-		permanent_cached_pages.erase(curr_page);
-		Frame::MetaWrite(frames[page_frame_map[curr_page]], files[curr_page >> 40]->meta_lock).set_last_use(step);
-		permanent_cached_pages.insert(curr_page);
-		printf(" up_keep END\n#########################################\n");
-	}
+	void up_lru(page_id curr_page);
+	void up_fifo(page_id curr_page);
+	void up_keep(page_id curr_page);
 
 	insertion_policy_fn cache_insertion_policies[3] = {
 		&FileCacheManager::ip_keep,

@@ -680,6 +680,55 @@ bool FileCacheManager::eof_reached(const RID rid) const {
 	return eof;
 }
 
+void FileCacheManager::rmp_lru(page_id curr_page) {
+	WARN_PRINTS("Removing LRU page " + itoh(curr_page));
+	if (lru_cached_pages.find(curr_page) != NULL)
+		lru_cached_pages.erase(curr_page);
+}
+
+void FileCacheManager::rmp_fifo(page_id curr_page) {
+	WARN_PRINTS("Removing FIFO page " + itoh(curr_page));
+	if (fifo_cached_pages.find(curr_page) != NULL)
+		fifo_cached_pages.erase(curr_page);
+}
+
+void FileCacheManager::rmp_keep(page_id curr_page) {
+	WARN_PRINTS("Removing permanent page " + itoh(curr_page));
+	if (permanent_cached_pages.find(curr_page) != NULL)
+		permanent_cached_pages.erase(curr_page);
+}
+
+void FileCacheManager::ip_lru(page_id curr_page) {
+	WARN_PRINT("LRU cached.");
+	lru_cached_pages.insert(curr_page);
+}
+
+void FileCacheManager::ip_fifo(page_id curr_page) {
+	WARN_PRINT("FIFO cached.");
+	fifo_cached_pages.push_front(curr_page);
+}
+
+void FileCacheManager::ip_keep(page_id curr_page) {
+	WARN_PRINT("Permanent cached.");
+	permanent_cached_pages.insert(curr_page);
+}
+
+void FileCacheManager::up_lru(page_id curr_page) {
+	WARN_PRINT(("Updating LRU page " + itoh(curr_page)).utf8().get_data());
+	lru_cached_pages.erase(curr_page);
+	Frame::MetaWrite(frames[page_frame_map[curr_page]], files[curr_page >> 40]->meta_lock).set_last_use(step);
+	lru_cached_pages.insert(curr_page);
+}
+void FileCacheManager::up_fifo(page_id curr_page) {
+	WARN_PRINT(("Updating FIFO page " + itoh(curr_page)).utf8().get_data());
+}
+void FileCacheManager::up_keep(page_id curr_page) {
+	WARN_PRINT(("Updating Permanent page " + itoh(curr_page)).utf8().get_data());
+	permanent_cached_pages.erase(curr_page);
+	Frame::MetaWrite(frames[page_frame_map[curr_page]], files[curr_page >> 40]->meta_lock).set_last_use(step);
+	permanent_cached_pages.insert(curr_page);
+}
+
 /**
  * LRU replacement policy.
  */
@@ -1048,22 +1097,7 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 	do {
 
-		// ERR_PRINTS("Thread" + itoh(fcs.thread->get_id()) + "Waiting for message.");
-		{
-			_err_print_error(
-				FUNCTION_STR,
-				__FILE__,
-				__LINE__,
-				String(
-					"Thread" +
-					itoh(
-						fcs.thread->get_id()
-						) +
-					"Waiting for message."
-				).utf8().get_data()
-			);
-			_err_error_exists = false;
-		}
+		ERR_PRINTS("Thread" + itoh(fcs.thread->get_id()) + "Waiting for message.");
 		CtrlOp l = fcs.op_queue.pop();
 		ERR_PRINT("got message");
 		if (l.type == CtrlOp::QUIT) break;
