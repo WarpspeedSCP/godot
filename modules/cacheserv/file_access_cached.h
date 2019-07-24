@@ -75,8 +75,8 @@ protected:
 	_FORCE_INLINE_ T get_t() const {
 
 		T buf = CS_MEM_VAL_BAD;
-		cache_mgr->check_cache(&cached_file, sizeof(T));
-		int o_length = cache_mgr->read(&cached_file, &buf, sizeof(T));
+		cache_mgr->check_cache(cached_file, sizeof(T));
+		int o_length = cache_mgr->read(cached_file, &buf, sizeof(T));
 		if (o_length < sizeof(T)) {
 			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
 		}
@@ -86,8 +86,8 @@ protected:
 	template <typename T>
 	void store_t(T buf) {
 
-		cache_mgr->check_cache(&cached_file, sizeof(T));
-		int o_length = cache_mgr->write(&cached_file, &buf, sizeof(T));
+		cache_mgr->check_cache(cached_file, sizeof(T));
+		int o_length = cache_mgr->write(cached_file, &buf, sizeof(T));
 		if (o_length < sizeof(T)) {
 			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
 		}
@@ -103,15 +103,16 @@ protected:
 
 public:
 
-	virtual void close() {
+	void close() {
 		if(cached_file.is_valid()) {
-			cache_mgr->close(&cached_file);
+			cache_mgr->close(cached_file);
 		}
 	} ///< close a file
 
+	// Completely removes the file from the cache, including cached pages.
 	void permanent_close() {
 		if(cached_file.is_valid()) {
-			cache_mgr->permanent_close(&cached_file);
+			cache_mgr->permanent_close(cached_file);
 			cached_file = RID();
 		}
 	}
@@ -122,23 +123,23 @@ public:
 	virtual String get_path_absolute() const { return abs_path; } /// returns the absolute path for the current open file
 
 	virtual void seek(size_t p_position) {
-		cache_mgr->seek(&cached_file, p_position);
-		cache_mgr->check_cache(&cached_file, CS_LEN_UNSPECIFIED);
+		cache_mgr->seek(cached_file, p_position);
+		cache_mgr->check_cache(cached_file, CS_LEN_UNSPECIFIED);
 	} ///< seek to a given position
 
-	virtual void seek_end(int64_t p_position ) { cache_mgr->seek_end(&cached_file, p_position); } ///< seek from the end of file
+	virtual void seek_end(int64_t p_position ) { cache_mgr->seek_end(cached_file, p_position); } ///< seek from the end of file
 
-	virtual size_t get_position() const { return cache_mgr->get_len(&cached_file); } ///< get position in the file
+	virtual size_t get_position() const { return cache_mgr->get_len(cached_file); } ///< get position in the file
 
-	virtual size_t get_len() const { return cache_mgr->get_len(&cached_file); } ///< get size of the file
+	virtual size_t get_len() const { return cache_mgr->get_len(cached_file); } ///< get size of the file
 
-	virtual bool eof_reached() const { return cache_mgr->eof_reached(&cached_file); } ///< reading passed EOF
+	virtual bool eof_reached() const { return cache_mgr->eof_reached(cached_file); } ///< reading passed EOF
 
 	virtual uint8_t get_8() const { return get_t<uint8_t>(); } ///< get a byte
 
 	virtual int get_buffer(uint8_t *p_dst, int p_length) const {
 		int o_length = 0;
-		ERR_PRINTS("Initial offset: " + itoh(cache_mgr->get_position(&cached_file)));
+		ERR_PRINTS("Initial offset: " + itoh(cache_mgr->get_position(cached_file)));
 
 		// Read 4 pages of data at a time. This is so that it will always be
 		// possible to have pages of a file present in the cache without worrying
@@ -146,15 +147,15 @@ public:
 
 
 		for(int i = 0; i < p_length - (p_length % (CS_PAGE_SIZE * 4)); i += CS_PAGE_SIZE * 2) {
-			ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(&cached_file) + i));
-			cache_mgr->check_cache(&cached_file, CS_PAGE_SIZE * 4);
-			o_length += cache_mgr->read(&cached_file, p_dst + i, CS_PAGE_SIZE * 2);
+			ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file) + i));
+			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
+			o_length += cache_mgr->read(cached_file, p_dst + i, CS_PAGE_SIZE * 2);
 		}
 
 		if((p_length % (CS_PAGE_SIZE * 4)) > 0) {
-			ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(&cached_file)));
-			cache_mgr->check_cache(&cached_file, CS_PAGE_SIZE * 4);
-			o_length += cache_mgr->read(&cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
+			ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file)));
+			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
+			o_length += cache_mgr->read(cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
 
 		return o_length;
@@ -169,14 +170,14 @@ public:
 
 	virtual Error get_error() const { return last_error; } ///< get last error
 
-	virtual void flush() { cache_mgr->flush(&cached_file); }
+	virtual void flush() { cache_mgr->flush(cached_file); }
 
 	virtual void store_8(uint8_t p_dest) { return store_t(p_dest); }  ///< store a byte
 
 	virtual void store_buffer(const uint8_t *p_src, int p_length) {
 
-		cache_mgr->check_cache(&cached_file, p_length);
-		int o_length = cache_mgr->write(&cached_file, p_src, p_length);
+		cache_mgr->check_cache(cached_file, p_length);
+		int o_length = cache_mgr->write(cached_file, p_src, p_length);
 		if(p_length < o_length)
 			ERR_PRINT(("Wrote less than " + itoh(p_length) + " bytes.\n").utf8().get_data());
 	} ///< store an array of bytes
@@ -192,9 +193,9 @@ public:
 	FileAccessCached() {
 
 		cache_mgr = static_cast<_FileCacheManager *>(Engine::get_singleton()->get_singleton_object("FileCacheManager"))->get_sss();
-		ERR_FAIL_COND(!cache_mgr);
+		CRASH_COND(!cache_mgr);
 		sem = Semaphore::create();
-		ERR_FAIL_COND(!sem);
+		CRASH_COND(!sem);
 	}
 
 	virtual ~FileAccessCached() {
