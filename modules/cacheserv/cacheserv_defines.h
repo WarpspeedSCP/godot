@@ -80,7 +80,6 @@
 	{                                                                                                                                                \
 		if (unlikely(m_cond)) {                                                                                                                      \
 			_err_print_error(FUNCTION_STR, __FILE__, __LINE__, ("Condition ' " _STR(m_cond) " ' is true. Message: " + m_message).utf8().get_data()); \
-		} else {                                                                                                                                     \
 			m_alt                                                                                                                                    \
 		}                                                                                                                                            \
 	}
