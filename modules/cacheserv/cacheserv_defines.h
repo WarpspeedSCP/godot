@@ -76,13 +76,13 @@
 			_err_error_exists = false;                                                                                                                              \
 	}
 
-#define ERR_COND_ACTION(m_cond, m_message, m_alt)                                                                                                                  \
+#define ERR_COND_ACTION(m_cond, m_message, m_alt)                                                                                                    \
 	{                                                                                                                                                \
 		if (unlikely(m_cond)) {                                                                                                                      \
 			_err_print_error(FUNCTION_STR, __FILE__, __LINE__, ("Condition ' " _STR(m_cond) " ' is true. Message: " + m_message).utf8().get_data()); \
-		} else {\
-m_alt                                                                                                                                       \
-		}                                                                                                        \
+		} else {                                                                                                                                     \
+			m_alt                                                                                                                                    \
+		}                                                                                                                                            \
 	}
 
 #endif // CACHESERV_DEFINES_H
