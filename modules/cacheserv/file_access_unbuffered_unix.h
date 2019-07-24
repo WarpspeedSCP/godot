@@ -64,7 +64,6 @@ class FileAccessUnbufferedUnix : public FileAccess {
 	static FileAccess *create_unbuf_unix();
 
 public:
-	static CloseNotificationFunc close_notification_func;
 
 	Error unbuffered_open(const String &p_path, int p_mode_flags);
 	virtual Error _open(const String &p_path, int p_mode_flags); ///< open a file
