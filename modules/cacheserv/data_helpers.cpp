@@ -20,7 +20,7 @@ DescriptorInfo::DescriptorInfo(FileAccess *fa, page_id new_range, int cache_poli
 			break;
 	}
 	total_size = internal_data_source->get_len();
-	abs_path = internal_data_source->get_path_absolute();
+	path = internal_data_source->get_path();
 	sem = Semaphore::create();
 	meta_lock = RWLock::create();
 	data_lock = RWLock::create();

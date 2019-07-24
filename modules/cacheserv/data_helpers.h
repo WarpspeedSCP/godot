@@ -330,9 +330,9 @@ public:
 struct DescriptorInfo {
 	size_t offset;
 	size_t total_size;
-	size_t guid_prefix;
+	uint64_t guid_prefix;
 	Vector<page_id> pages;
-	String abs_path;
+	String path;
 	int cache_policy;
 	int max_pages;
 	FileAccess *internal_data_source;
