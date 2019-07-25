@@ -13,13 +13,10 @@ sources = [
 	"register_types.cpp"
 ]
 
-#env_cacheserv.add_source_files(env.modules_sources, "*.cpp") # Add all cpp files to the build
 env_cacheserv.add_source_files(env.modules_sources, sources) # Add all cpp files to the build
-env_cacheserv.Append(CXXFLAGS='-fPIC')  # Needed to compile shared library
-env_cacheserv['LIBS'] = []
+# env_cacheserv.add_source_files(env.modules_sources, sources) # Add all cpp files to the build
+# env_cacheserv.Append(CXXFLAGS='-fPIC')  # Needed to compile shared library
+# env_cacheserv['LIBS'] = []
 
-shared_lib = env_cacheserv.SharedLibrary(target='#bin/cacheserv', source=sources)
-shared_lib_shim = shared_lib[0].name.rsplit('.', 1)[0]
-
-# env.Append(LIBS=[shared_lib_shim])
-# env.Append(LIBPATH=['#bin'])
+# shared_lib = env_cacheserv.SharedLibrary(target='#bin/cacheserv', source=sources)
+# shared_lib_shim = shared_lib[0].name.rsplit('.', 1)[0]
