@@ -109,11 +109,13 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 				desc_info->valid,
 				String("This file is already open."),
 				{ return RID(); });
-		CRASH_COND(desc_info->internal_data_source->is_open());
+		CRASH_COND(desc_info->internal_data_source != NULL);
 
-		desc_info->valid = true;
-		desc_info->internal_data_source->open(desc_info->path, p_mode);
+		desc_info->internal_data_source = FileAccess::open(desc_info->path, p_mode);
 		seek(rid, files[rid.get_id() & 0x0000000000FFFFFF]->offset);
+		desc_info->valid = true;
+		// Let the IO thread know that the file can be read from.
+		desc_info->sem->post();
 
 		if(desc_info->cache_policy != cache_policy) {
 			for(int i = 0; i < desc_info->pages.size(); ++i) {
@@ -153,8 +155,11 @@ void FileCacheManager::close(const RID rid) {
 
 	DescriptorInfo *desc_info = *elem;
 
+	// We'll delete the FileAccess pointer in the open function if we reopen this file.
 	desc_info->valid = false;
 	desc_info->internal_data_source->close();
+	memdelete(desc_info->internal_data_source);
+	desc_info->internal_data_source = NULL;
 }
 
 void FileCacheManager::permanent_close(const RID rid) {
@@ -165,17 +170,17 @@ void FileCacheManager::permanent_close(const RID rid) {
 	memdelete(rid.get_data());
 }
 
-Error FileCacheManager::reopen(const RID rid, int mode) {
-	DescriptorInfo *di = files[RID_REF_TO_DD];
-	if (!di->valid) {
-		di->valid = true;
-		return di->internal_data_source->reopen(di->path, mode);
+// Error FileCacheManager::reopen(const RID rid, int mode) {
+// 	DescriptorInfo *di = files[RID_REF_TO_DD];
+// 	if (!di->valid) {
+// 		di->valid = true;
+// 		return di->internal_data_source->reopen(di->path, mode);
 
-	} else {
-		return di->internal_data_source->reopen(di->path, mode);
-		// FIXME: BAD SIDE EFFECTS OF CHANGING FILE MODES!!!
-	}
-}
+// 	} else {
+// 		return di->internal_data_source->reopen(di->path, mode);
+// 		// FIXME: BAD SIDE EFFECTS OF CHANGING FILE MODES!!!
+// 	}
+// }
 
 /**
  * Register a file handle with the cache manager.
@@ -231,8 +236,10 @@ void FileCacheManager::remove_data_source(RID rid) {
 void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
 	// Get data from data source somehow...
 
-	if (!desc_info->valid) {
-		ERR_EXPLAIN("File not open!")
+	// Wait until the file is open.
+	while(desc_info->valid != true) {
+		desc_info->sem->wait();
+		//ERR_EXPLAIN("File not open!")
 		// CRASH_NOW()//(!desc_info->valid)
 	}
 
@@ -252,6 +259,13 @@ void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, 
 // !!! takes mutable references to all params.
 void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
 	// store back to data source somehow...
+
+	// Wait until the file is open.
+	while(!desc_info->valid) {
+		desc_info->sem->wait();
+		//ERR_EXPLAIN("File not open!")
+		// CRASH_NOW()//(!desc_info->valid)
+	}
 
 	if (check_incomplete_page_store(desc_info, curr_page, curr_frame, offset)) {
 		ERR_PRINTS("Wrote less than " STRINGIFY(CS_PAGE_SIZE) " bytes.");
