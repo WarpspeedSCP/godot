@@ -35,6 +35,7 @@
 #include "core/object.h"
 #include "core/os/file_access.h"
 #include "core/os/semaphore.h"
+#include "core/io/marshalls.h"
 
 #include "file_cache_manager.h"
 
@@ -49,8 +50,8 @@ class FileAccessCached : public FileAccess, public Object {
 	static FileAccess *create() { return (FileAccess *)memnew(FileAccessCached); }
 
 private:
-    String rel_path;
-    String abs_path;
+	String rel_path;
+	String abs_path;
 
 	Error last_error;
 
@@ -59,7 +60,6 @@ private:
 	Semaphore *sem;
 
 protected:
-
 	Error cached_open(const String &p_path, int p_mode_flags, int cache_policy) {
 		cached_file = cache_mgr->open(p_path, p_mode_flags, cache_policy);
 		ERR_FAIL_COND_V(!cached_file.is_valid(), ERR_CANT_OPEN);
@@ -102,16 +102,15 @@ protected:
 	}
 
 public:
-
 	void close() {
-		if(cached_file.is_valid()) {
+		if (cached_file.is_valid()) {
 			cache_mgr->close(cached_file);
 		}
 	} ///< close a file
 
 	// Completely removes the file from the cache, including cached pages.
 	void permanent_close() {
-		if(cached_file.is_valid()) {
+		if (cached_file.is_valid()) {
 			cache_mgr->permanent_close(cached_file);
 			cached_file = RID();
 		}
@@ -124,10 +123,11 @@ public:
 
 	virtual void seek(size_t p_position) {
 		cache_mgr->seek(cached_file, p_position);
+		// After we seek, we check that the data there exists in the cache.
 		cache_mgr->check_cache(cached_file, CS_LEN_UNSPECIFIED);
 	} ///< seek to a given position
 
-	virtual void seek_end(int64_t p_position ) { cache_mgr->seek_end(cached_file, p_position); } ///< seek from the end of file
+	virtual void seek_end(int64_t p_position) { cache_mgr->seek_end(cached_file, p_position); } ///< seek from the end of file
 
 	virtual size_t get_position() const { return cache_mgr->get_len(cached_file); } ///< get position in the file
 
@@ -145,19 +145,21 @@ public:
 		// possible to have pages of a file present in the cache without worrying
 		// about not being able to add new pages to the cache or reading from invalid pages.
 
+		// This reads blocks of bytes at a time rather than calling get_8 a bunch of times.
 
-		for(int i = 0; i < p_length - (p_length % (CS_PAGE_SIZE * 4)); i += CS_PAGE_SIZE * 2) {
+		for (int i = 0; i < p_length - (p_length % (CS_PAGE_SIZE * 4)); i += CS_PAGE_SIZE * 2) {
 			//ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file) + i));
 			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
 			o_length += cache_mgr->read(cached_file, p_dst + i, CS_PAGE_SIZE * 2);
 		}
 
-		if((p_length % (CS_PAGE_SIZE * 4)) > 0) {
+		if ((p_length % (CS_PAGE_SIZE * 4)) > 0) {
 			//ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file)));
 			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
 			o_length += cache_mgr->read(cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
-
+		if (p_length > o_length)
+			ERR_PRINTS("Read less than " + itoh(p_length) + " bytes.\n");
 		return o_length;
 	} ///< get an array of bytes
 
@@ -165,33 +167,28 @@ public:
 
 	virtual void flush() { cache_mgr->flush(cached_file); }
 
-	virtual void store_8(uint8_t p_dest) { return store_t(p_dest); }  ///< store a byte
-
-	virtual String get_line() {
-		Vector<char> line;
-
-		CharType c = get_8();
-
-		while (!eof_reached()) {
-
-			if (c == '\n' || c == '\0') {
-				line.push_back(0);
-				return String::utf8(line.ptr());
-			} else if (c != '\r') line.push_back(c);
-
-			c = get_8();
-		}
-		line.push_back(0);
-		return String::utf8(line.ptr());
-	}
+	virtual void store_8(uint8_t p_dest) { return store_t(p_dest); } ///< store a byte
 
 	virtual void store_buffer(const uint8_t *p_src, int p_length) {
 
-		cache_mgr->check_cache(cached_file, p_length);
-		int o_length = cache_mgr->write(cached_file, p_src, p_length);
-		if(p_length < o_length)
-			ERR_PRINT(("Wrote less than " + itoh(p_length) + " bytes.\n").utf8().get_data());
+		int o_length = 0;
+
+		for (int i = 0; i < p_length - (p_length % (CS_PAGE_SIZE * 4)); i += CS_PAGE_SIZE * 2) {
+			//ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file) + i));
+			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
+			o_length += cache_mgr->write(cached_file, p_src + i, CS_PAGE_SIZE * 2);
+		}
+
+		if ((p_length % (CS_PAGE_SIZE * 4)) > 0) {
+			//ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file)));
+			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
+			o_length += cache_mgr->write(cached_file, p_src + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
+		}
+
+		if (p_length > o_length)
+			ERR_PRINTS("Wrote less than " + itoh(p_length) + " bytes.\n");
 	} ///< store an array of bytes
+
 
 	virtual bool file_exists(const String &p_name) { return cache_mgr->file_exists(p_name); } ///< return true if a file exists
 
@@ -216,43 +213,102 @@ public:
 	}
 };
 
-class _FileAccessCached: public Object {
+class _FileAccessCached : public Object {
 
 	GDCLASS(_FileAccessCached, Object);
 
 	friend class FileAccessCached;
 
 protected:
-
 	FileAccessCached fac;
 
 	static void _bind_methods() {
 		ClassDB::bind_method(D_METHOD("open", "path", "mode", "cache_policy"), &_FileAccessCached::open);
 		ClassDB::bind_method(D_METHOD("close"), &_FileAccessCached::close);
+
+		ClassDB::bind_method(D_METHOD("get_8"), &_FileAccessCached::get_8);
+		ClassDB::bind_method(D_METHOD("get_16"), &_FileAccessCached::get_16);
+		ClassDB::bind_method(D_METHOD("get_32"), &_FileAccessCached::get_32);
+		ClassDB::bind_method(D_METHOD("get_64"), &_FileAccessCached::get_64);
+
+		ClassDB::bind_method(D_METHOD("get_float"), &_FileAccessCached::get_float);
+		ClassDB::bind_method(D_METHOD("get_double"), &_FileAccessCached::get_double);
+		ClassDB::bind_method(D_METHOD("get_real"), &_FileAccessCached::get_real);
+
 		ClassDB::bind_method(D_METHOD("get_buffer", "len"), &_FileAccessCached::get_buffer);
 		ClassDB::bind_method(D_METHOD("get_line"), &_FileAccessCached::get_line);
+		ClassDB::bind_method(D_METHOD("get_csv_line"), &_FileAccessCached::get_csv_line);
+
+		ClassDB::bind_method(D_METHOD("store_8"), &_FileAccessCached::store_8);
+		ClassDB::bind_method(D_METHOD("store_16"), &_FileAccessCached::store_16);
+		ClassDB::bind_method(D_METHOD("store_32"), &_FileAccessCached::store_32);
+		ClassDB::bind_method(D_METHOD("store_64"), &_FileAccessCached::store_64);
+		ClassDB::bind_method(D_METHOD("store_buffer"), &_FileAccessCached::store_buffer);
+
+		ClassDB::bind_method(D_METHOD("store_float"), &_FileAccessCached::store_float);
+		ClassDB::bind_method(D_METHOD("store_double"), &_FileAccessCached::store_double);
+		ClassDB::bind_method(D_METHOD("store_real"), &_FileAccessCached::store_real);
+
+		ClassDB::bind_method(D_METHOD("store_buffer"), &_FileAccessCached::store_buffer);
+		ClassDB::bind_method(D_METHOD("store_line"), &_FileAccessCached::store_line);
+		ClassDB::bind_method(D_METHOD("store_csv_line"), &_FileAccessCached::store_csv_line);
+
 		ClassDB::bind_method(D_METHOD("seek", "position"), &_FileAccessCached::seek);
 		ClassDB::bind_method(D_METHOD("seek_end", "position"), &_FileAccessCached::seek_end);
+
+		ClassDB::bind_method(D_METHOD("eof_reached"), &_FileAccessCached::eof_reached);
+		ClassDB::bind_method(D_METHOD("flush"), &_FileAccessCached::flush);
+
 	}
-
 public:
-
 	_FileAccessCached() {}
 	~_FileAccessCached() {
 		//WARN_PRINT("FileAccesCached destructor");
 	}
 
-	Variant open(String path, int mode, int cache_policy) {
-
-		if(fac.cached_open(path, mode, cache_policy) == OK) {
-			return this;
-		} else return NULL;
+	bool eof_reached() {
+		return fac.eof_reached();
 	}
 
-	char get_8() {
+	Variant open(String path, int mode, int cache_policy) {
+
+		if (fac.cached_open(path, mode, cache_policy) == OK) {
+			return this;
+		} else
+			return NULL;
+	}
+
+	uint8_t get_8() {
 		return fac.get_8();
 	}
 
+	uint16_t get_16() {
+		return fac.get_16();
+	}
+
+	uint32_t get_32() {
+		return fac.get_32();
+	}
+
+	uint64_t get_64() {
+		return fac.get_64();
+	}
+
+	float get_float() {
+		return fac.get_float();
+	}
+
+	double get_double() {
+		return fac.get_double();
+	}
+
+	real_t get_real() {
+		return fac.get_real();
+	}
+
+	Vector<String> get_csv_line() {
+		return fac.get_csv_line();
+	}
 
 	PoolByteArray get_buffer(int len) {
 		PoolByteArray pba;
@@ -261,25 +317,61 @@ public:
 		return pba;
 	}
 
-	String get_line() {
-		return fac.get_line();
-	}
+	void flush() { fac.flush(); }
 
-	void seek(int64_t position) {
-		fac.seek(position);
-	}
+	String get_line() { return fac.get_line();}
+
+	void seek(int64_t position) { fac.seek(position); }
 
 	void seek_end(int64_t position) {
 		fac.seek(position);
 	}
 
+	void store_8(int value) { fac.store_8(value); }
+	void store_16(int value) { fac.store_16(value); }
+	void store_32(int value) { fac.store_32(value); }
+	void store_64(int value) { fac.store_64(value); }
+
+	void store_buffer(PoolByteArray buffer) { fac.store_buffer(buffer.read().ptr(), buffer.size()); }
+
+	void store_csv_line(PoolStringArray values, String delim = ",") {
+		Vector<String> v;
+		v.resize(values.size());
+		for (int i = 0; i < values.size(); i++) {
+			v.push_back(values[i]);
+		}
+		fac.store_csv_line(v, delim);
+	}
+
+	void store_double(double value) { fac.store_double(value); }
+	void store_float(float value) { fac.store_float(value); }
+	void store_line(String line) { fac.store_line(line); }
+	void store_pascal_string(String string) { fac.store_pascal_string(string); }
+	void store_real(float value) { fac.store_real(value); }
+	void store_string(String string) { fac.store_string(string); }
+
+	void store_var(const Variant &p_var, bool p_full_objects) {
+		int len;
+		Error err = encode_variant(p_var, NULL, len, p_full_objects);
+		ERR_FAIL_COND(err != OK);
+
+		PoolVector<uint8_t> buff;
+		buff.resize(len);
+		PoolVector<uint8_t>::Write w = buff.write();
+
+		err = encode_variant(p_var, &w[0], len, p_full_objects);
+		ERR_FAIL_COND(err != OK);
+		w = PoolVector<uint8_t>::Write();
+
+		store_32(len);
+		store_buffer(buff);
+	}
 
 	void close() {
 
-		if(fac.is_open())
+		if (fac.is_open())
 			fac.close();
 	}
-
 };
 
 #endif // FILE_ACCESS_CACHED_H
