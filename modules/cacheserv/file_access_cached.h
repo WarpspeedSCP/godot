@@ -78,7 +78,7 @@ protected:
 		cache_mgr->check_cache(cached_file, sizeof(T));
 		int o_length = cache_mgr->read(cached_file, &buf, sizeof(T));
 		if (o_length < sizeof(T)) {
-			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
+			//ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
 		}
 		return buf;
 	}
@@ -89,7 +89,7 @@ protected:
 		cache_mgr->check_cache(cached_file, sizeof(T));
 		int o_length = cache_mgr->write(cached_file, &buf, sizeof(T));
 		if (o_length < sizeof(T)) {
-			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
+			//ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
 		}
 	}
 
@@ -139,7 +139,7 @@ public:
 
 	virtual int get_buffer(uint8_t *p_dst, int p_length) const {
 		int o_length = 0;
-		ERR_PRINTS("Initial offset: " + itoh(cache_mgr->get_position(cached_file)));
+		//ERR_PRINTS("Initial offset: " + itoh(cache_mgr->get_position(cached_file)));
 
 		// Read 4 pages of data at a time. This is so that it will always be
 		// possible to have pages of a file present in the cache without worrying
@@ -147,13 +147,13 @@ public:
 
 
 		for(int i = 0; i < p_length - (p_length % (CS_PAGE_SIZE * 4)); i += CS_PAGE_SIZE * 2) {
-			ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file) + i));
+			//ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file) + i));
 			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
 			o_length += cache_mgr->read(cached_file, p_dst + i, CS_PAGE_SIZE * 2);
 		}
 
 		if((p_length % (CS_PAGE_SIZE * 4)) > 0) {
-			ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file)));
+			//ERR_PRINTS("Current offset: " + itoh(cache_mgr->get_position(cached_file)));
 			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
 			o_length += cache_mgr->read(cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
@@ -210,7 +210,7 @@ public:
 	}
 
 	virtual ~FileAccessCached() {
-		WARN_PRINT("FileAccesCached destructor");
+		//WARN_PRINT("FileAccesCached destructor");
 		close();
 		memdelete(sem);
 	}
@@ -239,7 +239,7 @@ public:
 
 	_FileAccessCached() {}
 	~_FileAccessCached() {
-		WARN_PRINT("FileAccesCached destructor");
+		//WARN_PRINT("FileAccesCached destructor");
 	}
 
 	Variant open(String path, int mode, int cache_policy) {
