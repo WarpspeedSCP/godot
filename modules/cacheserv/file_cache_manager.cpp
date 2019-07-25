@@ -697,8 +697,7 @@ bool FileCacheManager::eof_reached(const RID rid) const {
 
 	ERR_FAIL_COND_MSG_V(!elem, String("No such file"), true);
 
-	bool eof = (*elem)->internal_data_source->eof_reached();
-	return eof;
+	return (*elem)->internal_data_source->eof_reached();
 }
 
 void FileCacheManager::rmp_lru(page_id curr_page) {

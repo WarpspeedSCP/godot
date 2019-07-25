@@ -96,7 +96,7 @@ protected:
 	static void _bind_methods() {
 		ClassDB::bind_method(D_METHOD("open", "path", "mode"), &FileAccessCached::_open);
 		ClassDB::bind_method(D_METHOD("close"), &FileAccessCached::close);
-		ClassDB::bind_method(D_METHOD("get_buffer", "len"), &FileAccessCached::_get_buffer);
+		//ClassDB::bind_method(D_METHOD("get_buffer", "len"), &FileAccessCached::get_buffer);
 		ClassDB::bind_method(D_METHOD("seek", "position"), &FileAccessCached::seek);
 		ClassDB::bind_method(D_METHOD("seek_end", "position"), &FileAccessCached::seek_end);
 	}
@@ -161,18 +161,29 @@ public:
 		return o_length;
 	} ///< get an array of bytes
 
-	PoolByteArray _get_buffer(int p_length) {
-		PoolByteArray pba;
-		pba.resize(p_length);
-		get_buffer(pba.write().ptr(), p_length);
-		return pba;
-	}
-
 	virtual Error get_error() const { return last_error; } ///< get last error
 
 	virtual void flush() { cache_mgr->flush(cached_file); }
 
 	virtual void store_8(uint8_t p_dest) { return store_t(p_dest); }  ///< store a byte
+
+	virtual String get_line() {
+		Vector<char> line;
+
+		CharType c = get_8();
+
+		while (!eof_reached()) {
+
+			if (c == '\n' || c == '\0') {
+				line.push_back(0);
+				return String::utf8(line.ptr());
+			} else if (c != '\r') line.push_back(c);
+
+			c = get_8();
+		}
+		line.push_back(0);
+		return String::utf8(line.ptr());
+	}
 
 	virtual void store_buffer(const uint8_t *p_src, int p_length) {
 
@@ -219,6 +230,7 @@ protected:
 		ClassDB::bind_method(D_METHOD("open", "path", "mode", "cache_policy"), &_FileAccessCached::open);
 		ClassDB::bind_method(D_METHOD("close"), &_FileAccessCached::close);
 		ClassDB::bind_method(D_METHOD("get_buffer", "len"), &_FileAccessCached::get_buffer);
+		ClassDB::bind_method(D_METHOD("get_line"), &_FileAccessCached::get_line);
 		ClassDB::bind_method(D_METHOD("seek", "position"), &_FileAccessCached::seek);
 		ClassDB::bind_method(D_METHOD("seek_end", "position"), &_FileAccessCached::seek_end);
 	}
@@ -237,8 +249,20 @@ public:
 		} else return NULL;
 	}
 
+	char get_8() {
+		return fac.get_8();
+	}
+
+
 	PoolByteArray get_buffer(int len) {
-		return fac._get_buffer(len);
+		PoolByteArray pba;
+		pba.resize(len);
+		fac.get_buffer(pba.write().ptr(), len);
+		return pba;
+	}
+
+	String get_line() {
+		return fac.get_line();
 	}
 
 	void seek(int64_t position) {
