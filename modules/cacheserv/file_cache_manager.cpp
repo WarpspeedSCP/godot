@@ -115,6 +115,13 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 		desc_info->internal_data_source->open(desc_info->path, p_mode);
 		seek(rid, files[rid.get_id() & 0x0000000000FFFFFF]->offset);
 
+		if(desc_info->cache_policy != cache_policy) {
+			for(int i = 0; i < desc_info->pages.size(); ++i) {
+				CS_GET_CACHE_POLICY_FN(cache_removal_policies, desc_info->cache_policy)(desc_info->pages[i]);
+				CS_GET_CACHE_POLICY_FN(cache_insertion_policies, cache_policy)(desc_info->pages[i]);
+			}
+		}
+
 	} else {
 		// Will be freed when close is called with the corresponding RID.
 		CachedResourceHandle *hdl = memnew(CachedResourceHandle);
