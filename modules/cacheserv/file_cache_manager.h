@@ -158,6 +158,66 @@ private:
 		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::STORE));
 	}
 
+	void do_flush_op(DescriptorInfo *desc_info) {
+		CRASH_COND(!(desc_info->internal_data_source));
+
+		op_queue.lock();
+
+
+		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
+			if (e->get().di == desc_info && e->get().type == CtrlOp::STORE)
+				e->erase();
+		}
+
+		int j = 0;
+		for (int i = 0; i < desc_info->pages.size(); i++) {
+			if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
+				do_store_op(desc_info, page_frame_map[desc_info->pages[i]], desc_info->pages[i], page_frame_map[desc_info->pages[i]]);
+
+				j += 1;
+			}
+		}
+
+		op_queue.unlock();
+	}
+
+	void do_flush_close_op(DescriptorInfo *desc_info) {
+		CRASH_COND(!(desc_info->internal_data_source));
+		op_queue.lock();
+
+
+		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
+			if (e->get().di == desc_info)
+				e->erase();
+		}
+
+		for (int i = 0; i < desc_info->pages.size(); i++) {
+			if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
+				do_store_op(desc_info, page_frame_map[desc_info->pages[i]], desc_info->pages[i], page_frame_map[desc_info->pages[i]]);
+			}
+		}
+
+		desc_info->internal_data_source->close();
+		memdelete(desc_info->internal_data_source);
+		desc_info->internal_data_source = NULL;
+		desc_info->dirty = false;
+
+		op_queue.unlock();
+	}
+
+	void enqueue_flush(DescriptorInfo *desc_info) {
+		op_queue.lock();
+		op_queue.queue.push_front(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH));
+		op_queue.unlock();
+	}
+
+	void enqueue_flush_close(DescriptorInfo *desc_info) {
+		//op_queue.lock();
+		op_queue.queue.push_front(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH_CLOSE));
+		op_queue.sem->post();
+		//op_queue.unlock();
+	}
+
 protected:
 public:
 	typedef void (FileCacheManager::*insertion_policy_fn)(page_id);
