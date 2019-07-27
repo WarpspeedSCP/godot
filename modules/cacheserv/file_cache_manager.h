@@ -42,9 +42,9 @@
 #include "core/variant.h"
 #include "core/vector.h"
 
-#include "data_helpers.h"
 #include "cacheserv_defines.h"
 #include "control_queue.h"
+#include "data_helpers.h"
 
 // #if defined(UNIX_ENABLED)
 // typedef FileAccessUnbufferedUnix PreferredFileAccessType;
@@ -137,20 +137,18 @@ private:
 		WARN_PRINTS("Enqueueing load for file " + desc_info->path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
 
 		if (offset > desc_info->total_size) {
-		// We can zero fill the current frame and return if the
-		// current page is higher than the size of the file, to
-		// prevent accidentally reading old data.
-		// Not sure if this can cause a deadlock yet.
-		// TODO: Investigate possible deadlocks.
+			// We can zero fill the current frame and return if the
+			// current page is higher than the size of the file, to
+			// prevent accidentally reading old data.
+			// Not sure if this can cause a deadlock yet.
+			// TODO: Investigate possible deadlocks.
 			WARN_PRINTS("Accessed out of bounds, reading zeroes.");
-			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->data_lock).ptr(), 0, CS_PAGE_SIZE);
+			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->data_lock, true).ptr(), 0, CS_PAGE_SIZE);
 			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_ready_true(desc_info->sem, CS_GET_PAGE(offset), curr_frame);
 			WARN_PRINTS("Finished OOB access.");
 		} else {
 			op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
-
 		}
-
 	}
 
 	// Expects that the page at the given offset is in the cache.
