@@ -91,6 +91,7 @@ protected:
 		if (o_length < sizeof(T)) {
 			//ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
 		}
+
 	}
 
 	static void _bind_methods() {
@@ -111,6 +112,7 @@ public:
 	// Completely removes the file from the cache, including cached pages.
 	void permanent_close() {
 		if (cached_file.is_valid()) {
+			cache_mgr->close(cached_file);
 			cache_mgr->permanent_close(cached_file);
 			cached_file = RID();
 		}
@@ -243,7 +245,6 @@ protected:
 		ClassDB::bind_method(D_METHOD("store_16"), &_FileAccessCached::store_16);
 		ClassDB::bind_method(D_METHOD("store_32"), &_FileAccessCached::store_32);
 		ClassDB::bind_method(D_METHOD("store_64"), &_FileAccessCached::store_64);
-		ClassDB::bind_method(D_METHOD("store_buffer"), &_FileAccessCached::store_buffer);
 
 		ClassDB::bind_method(D_METHOD("store_float"), &_FileAccessCached::store_float);
 		ClassDB::bind_method(D_METHOD("store_double"), &_FileAccessCached::store_double);
@@ -262,13 +263,9 @@ protected:
 	}
 public:
 	_FileAccessCached() {}
-	~_FileAccessCached() {
-		//WARN_PRINT("FileAccesCached destructor");
-	}
+	~_FileAccessCached() {}
 
-	bool eof_reached() {
-		return fac.eof_reached();
-	}
+	bool eof_reached() {return fac.eof_reached();}
 
 	Variant open(String path, int mode, int cache_policy) {
 
@@ -278,37 +275,21 @@ public:
 			return NULL;
 	}
 
-	uint8_t get_8() {
-		return fac.get_8();
-	}
+	uint8_t get_8() {return fac.get_8();}
 
-	uint16_t get_16() {
-		return fac.get_16();
-	}
+	uint16_t get_16() {return fac.get_16();}
 
-	uint32_t get_32() {
-		return fac.get_32();
-	}
+	uint32_t get_32() {return fac.get_32();}
 
-	uint64_t get_64() {
-		return fac.get_64();
-	}
+	uint64_t get_64() {return fac.get_64();}
 
-	float get_float() {
-		return fac.get_float();
-	}
+	float get_float() {return fac.get_float();}
 
-	double get_double() {
-		return fac.get_double();
-	}
+	double get_double() {return fac.get_double();}
 
-	real_t get_real() {
-		return fac.get_real();
-	}
+	real_t get_real() {return fac.get_real();}
 
-	Vector<String> get_csv_line() {
-		return fac.get_csv_line();
-	}
+	Vector<String> get_csv_line() {return fac.get_csv_line();}
 
 	PoolByteArray get_buffer(int len) {
 		PoolByteArray pba;
@@ -327,12 +308,19 @@ public:
 		fac.seek(position);
 	}
 
-	void store_8(int value) { fac.store_8(value); }
-	void store_16(int value) { fac.store_16(value); }
-	void store_32(int value) { fac.store_32(value); }
-	void store_64(int value) { fac.store_64(value); }
+	void store_8(uint8_t value) { fac.store_8(value); }
+	void store_16(uint16_t value) { fac.store_16(value); }
+	void store_32(uint32_t value) { fac.store_32(value); }
+	void store_64(uint64_t value) { fac.store_64(value); }
+
+
+
+	void store_float(float value) { fac.store_float(value); }
+	void store_double(double value) { fac.store_double(value); }
+	void store_real(float value) { fac.store_real(value); }
 
 	void store_buffer(PoolByteArray buffer) { fac.store_buffer(buffer.read().ptr(), buffer.size()); }
+	void store_line(String line) { fac.store_line(line); }
 
 	void store_csv_line(PoolStringArray values, String delim = ",") {
 		Vector<String> v;
@@ -343,11 +331,7 @@ public:
 		fac.store_csv_line(v, delim);
 	}
 
-	void store_double(double value) { fac.store_double(value); }
-	void store_float(float value) { fac.store_float(value); }
-	void store_line(String line) { fac.store_line(line); }
 	void store_pascal_string(String string) { fac.store_pascal_string(string); }
-	void store_real(float value) { fac.store_real(value); }
 	void store_string(String string) { fac.store_string(string); }
 
 	void store_var(const Variant &p_var, bool p_full_objects) {
