@@ -341,10 +341,13 @@ struct DescriptorInfo {
 	RWLock *meta_lock;
 	RWLock *data_lock;
 	bool valid;
+	bool dirty;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
 	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix, int cache_policy);
 	~DescriptorInfo() {
+		while (dirty);
+			//sem->wait();
 		memdelete(sem);
 		memdelete(meta_lock);
 		memdelete(data_lock);
