@@ -217,10 +217,9 @@ public:
 			return alloc->dirty;
 		}
 
-		_FORCE_INLINE_ MetaWrite &set_dirty_true(Semaphore *dirty_sem) {
+		_FORCE_INLINE_ MetaWrite &set_dirty_true() {
 			alloc->dirty = true;
 			//WARN_PRINT("Dirty page.");
-			dirty_sem->post();
 			return *this;
 		}
 
