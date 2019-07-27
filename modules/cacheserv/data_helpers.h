@@ -311,10 +311,11 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		DataWrite(Frame *const p_alloc, Semaphore *dirty_sem, RWLock *data_lock) :
+		DataWrite(Frame *const p_alloc, Semaphore *dirty_sem, RWLock *data_lock, bool is_io_op) :
 				rwl(data_lock),
 				mem(p_alloc->memory_region) {
-			while ( p_alloc->dirty ) dirty_sem->wait();
+			if(is_io_op)
+				while ( p_alloc->dirty ) dirty_sem->wait();
 			acquire();
 		}
 
