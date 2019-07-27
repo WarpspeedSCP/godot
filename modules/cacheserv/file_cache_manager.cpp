@@ -68,6 +68,12 @@ FileCacheManager::~FileCacheManager() {
 	//WARN_PRINT("Destructor running.");
 	if (memory_region) memdelete(memory_region);
 
+	if (rids.size()) {
+		for (const String *key = rids.next(NULL); key; key = rids.next(key)) {
+			permanent_close(rids[*key]);
+		}
+	}
+
 	if (files.size()) {
 		const data_descriptor *key = NULL;
 		for (key = files.next(NULL); key; key = files.next(key)) {
@@ -112,7 +118,7 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 		CRASH_COND(desc_info->internal_data_source != NULL);
 
 		desc_info->internal_data_source = FileAccess::open(desc_info->path, p_mode);
-		seek(rid, files[rid.get_id() & 0x0000000000FFFFFF]->offset);
+		seek(rid, files[RID_REF_TO_DD]->offset);
 		desc_info->valid = true;
 		// Let the IO thread know that the file can be read from.
 		desc_info->sem->post();
@@ -150,21 +156,21 @@ void FileCacheManager::close(const RID rid) {
 	// MutexLock ml(mutex);
 
 	DescriptorInfo *const *elem = files.getptr(RID_REF_TO_DD);
-
 	ERR_FAIL_COND_MSG(!elem, String("No such file"))
 
 	DescriptorInfo *desc_info = *elem;
 
-	// We'll delete the FileAccess pointer in the open function if we reopen this file.
-	desc_info->valid = false;
-	desc_info->internal_data_source->close();
-	memdelete(desc_info->internal_data_source);
-	desc_info->internal_data_source = NULL;
+	if (desc_info->internal_data_source)
+		enqueue_flush_close(desc_info);
+	else
+		ERR_PRINTS("File already closed.");
+	
 }
 
 void FileCacheManager::permanent_close(const RID rid) {
 	//WARN_PRINTS("permanently closed file with RID " + itoh(RID_REF_TO_DD));
 	MutexLock ml = MutexLock(mutex);
+	close(rid);
 	remove_data_source(rid);
 	handle_owner.free(rid);
 	memdelete(rid.get_data());
@@ -208,26 +214,29 @@ RID FileCacheManager::add_data_source(RID rid, FileAccess *data_source, int cach
 }
 
 void FileCacheManager::remove_data_source(RID rid) {
-	DescriptorInfo *di = files[rid.get_id() & 0x0000000000FFFFFF];
-	for (int i = 0; i < di->pages.size(); i++) {
-		Frame::MetaWrite(
-				frames[page_frame_map[di->pages[i]]],
-				di->meta_lock)
-				.set_used(false)
-				.set_ready_false();
-		memset(
-				Frame::DataWrite(
-						frames[page_frame_map[di->pages[i]]],
-						di->sem,
-						di->data_lock)
-						.ptr(),
-				0,
-				4096);
-	}
-	rids.erase(di->path);
-	files.erase(di->guid_prefix >> 40);
-	memdelete(di->internal_data_source);
-	memdelete(di);
+	DescriptorInfo *di = files[RID_REF_TO_DD];
+
+		for (int i = 0; i < di->pages.size(); i++) {
+			Frame::MetaWrite(
+					frames[page_frame_map[di->pages[i]]],
+					di->meta_lock)
+					.set_used(false)
+					.set_ready_false();
+			memset(
+					Frame::DataWrite(
+							frames[page_frame_map[di->pages[i]]],
+							di->sem,
+							di->data_lock,
+						true)
+							.ptr(),
+					0,
+					4096);
+		}
+		rids.erase(di->path);
+		files.erase(di->guid_prefix >> 40);
+		memdelete(di);
+
+
 }
 
 // !!! takes mutable references to all params.
@@ -261,16 +270,15 @@ void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page,
 	// store back to data source somehow...
 
 	// Wait until the file is open.
-	while(!desc_info->valid) {
-		desc_info->sem->wait();
-		//ERR_EXPLAIN("File not open!")
-		// CRASH_NOW()//(!desc_info->valid)
+	if(!desc_info->valid) {
+		ERR_EXPLAIN("File not open!")
+		CRASH_NOW()//(!desc_info->valid)
 	}
 
 	if (check_incomplete_page_store(desc_info, curr_page, curr_frame, offset)) {
 		//ERR_PRINTS("Wrote less than " STRINGIFY(CS_PAGE_SIZE) " bytes.");
 	} else {
-		ERR_PRINT("Read a page");
+		ERR_PRINT("Wrote a page");
 	}
 }
 
@@ -288,7 +296,8 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 		Frame::DataWrite w(
 				frames[curr_frame],
 				desc_info->sem,
-				desc_info->data_lock);
+				desc_info->data_lock,
+			true);
 
 		used_size = desc_info->internal_data_source->get_buffer(
 				w.ptr(),
@@ -480,7 +489,7 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 		//WARN_PRINTS("Reading first page with values:\ninitial_start_offset: " + itoh(initial_start_offset) + "\ninitial_end_offset: " + itoh(initial_end_offset) + "\n read size: " + itoh(initial_end_offset - initial_start_offset));
 
 		{ // Lock the page holder for the operation.
-			Frame::DataWrite w(frames[curr_frame], desc_info->sem, desc_info->data_lock);
+			Frame::DataWrite w(frames[curr_frame], desc_info->sem, desc_info->data_lock, false);
 
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info->offset)
 			//  gives us the address of the first byte to copy which may or may not be on a page boundary.
@@ -491,8 +500,11 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 					w.ptr() + CS_PARTIAL_SIZE(initial_start_offset),
 					(uint8_t *)data + data_offset,
 					initial_end_offset - initial_start_offset);
+
+			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_dirty_true();
 		}
 
+		desc_info->dirty = true;
 		data_offset += (initial_end_offset - initial_start_offset);
 		write_length -= data_offset;
 	}
@@ -510,12 +522,14 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 
 		// Lock current page holder.
 		{
-			Frame::DataWrite w(frames[curr_frame], desc_info->sem, desc_info->data_lock);
+			Frame::DataWrite w(frames[curr_frame], desc_info->sem, desc_info->data_lock, false);
 
 			memcpy(
 					w.ptr(),
 					(uint8_t *)data + data_offset,
 					CS_PAGE_SIZE);
+
+			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_dirty_true();
 		}
 
 		data_offset += CS_PAGE_SIZE;
@@ -536,12 +550,14 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 		//WARN_PRINTS("Writing last page.\nwrite_length: " + itoh(write_length) + "\ntemp_write_len: " + itoh(temp_write_len));
 
 		{ // Lock last page for reading data.
-			Frame::DataWrite w(frames[curr_frame], desc_info->sem, desc_info->data_lock);
+			Frame::DataWrite w(frames[curr_frame], desc_info->sem, desc_info->data_lock, false);
 
 			memcpy(
 					w.ptr(),
 					(uint8_t *)data + data_offset,
 					temp_write_len);
+
+			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_dirty_true();
 		}
 		data_offset += temp_write_len;
 		write_length -= temp_write_len;
@@ -1124,13 +1140,23 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 		switch (l.type) {
 			case CtrlOp::LOAD: {
-				//ERR_PRINT(("Performing load for offset " + itoh(l.offset) + "\nIn pages: " + itoh(CS_GET_PAGE(l.offset)) + "\nCurr page: " + itoh(curr_page) + "\nCurr frame: " + itoh(curr_frame)).utf8().get_data());
+				ERR_PRINTS("Performing load for offset " + itoh(l.offset) + "\nIn pages: " + itoh(CS_GET_PAGE(l.offset)) + "\nCurr page: " + itoh(curr_page) + "\nCurr frame: " + itoh(curr_frame));
 				fcs.do_load_op(l.di, curr_page, curr_frame, l.offset);
 				break;
 			}
 			case CtrlOp::STORE: {
-				//ERR_PRINT("Performing store.");
+				ERR_PRINT("Performing store.");
 				fcs.do_store_op(l.di, curr_page, curr_frame, l.offset);
+				break;
+			}
+			case CtrlOp::FLUSH: {
+				ERR_PRINT("Performing flush store.");
+				fcs.do_flush_op(l.di);
+				break;
+			}
+			case CtrlOp::FLUSH_CLOSE: {
+				ERR_PRINT("Performing flush store and close.")
+				fcs.do_flush_close_op(l.di);
 				break;
 			}
 			default: CRASH_NOW();
