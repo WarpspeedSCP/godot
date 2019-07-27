@@ -16,7 +16,9 @@ struct CtrlOp {
 	enum Op {
 		LOAD,
 		STORE,
-		QUIT
+		QUIT,
+		FLUSH,
+		FLUSH_CLOSE,
 	};
 
 	DescriptorInfo *di;
