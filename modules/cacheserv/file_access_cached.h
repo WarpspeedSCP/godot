@@ -62,7 +62,7 @@ private:
 protected:
 	Error cached_open(const String &p_path, int p_mode_flags, int cache_policy) {
 		cached_file = cache_mgr->open(p_path, p_mode_flags, cache_policy);
-		ERR_FAIL_COND_V(!cached_file.is_valid(), ERR_CANT_OPEN);
+		ERR_FAIL_COND_V(cached_file.is_valid() == false, ERR_CANT_OPEN);
 		return OK;
 	}
 
