@@ -48,7 +48,7 @@
 // Int to hex string.
 _FORCE_INLINE_ String itoh(size_t num) {
 	char x[100];
-	snprintf(x, 100,"%lx\0", (unsigned long)num);
+	snprintf(x, 100,"0x%lx\0", (unsigned long)num);
 	return String(x);
 }
 
@@ -143,7 +143,7 @@ public:
 		}
 
 		void acquire() {
-			// WARN_PRINT(("Acquiring metadata READ lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
+			// WARN_PRINTS("Acquiring metadata READ lock in thread ID " + itoh(Thread::get_caller_id()));
 			rwl->read_lock();
 		}
 
@@ -160,7 +160,7 @@ public:
 		~MetaRead() {
 			if (rwl) {
 				rwl->read_unlock();
-				// WARN_PRINT(("Released metadata READ lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
+				// WARN_PRINT(("Released metadata READ lock in thread ID 0x" + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -193,7 +193,7 @@ public:
 		~DataRead() {
 			if (rwl) {
 				rwl->read_unlock();
-				// WARN_PRINT(("Releasing data READ lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
+				// WARN_PRINT(("Releasing data READ lock in thread ID 0x" + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -245,7 +245,7 @@ public:
 
 		_FORCE_INLINE_ MetaWrite &set_ready_true(Semaphore *ready_sem, page_id page, frame_id frame) {
 			alloc->ready = true;
-			//WARN_PRINTS("Part ready for page " + itoh(page) + " and frame " + itoh(frame) + " .");
+			//WARN_PRINTS("Part ready for page 0x" + itoh(page) + " and frame 0x" + itoh(frame) + " .");
 			ready_sem->post();
 			return *this;
 		}
@@ -266,7 +266,7 @@ public:
 		}
 
 		void acquire() {
-			// WARN_PRINT(("Acquiring metadata WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
+			// WARN_PRINT(("Acquiring metadata WRITE lock in thread ID 0x" + itoh(Thread::get_caller_id())).utf8().get_data());
 			rwl->write_lock();
 		}
 
@@ -287,7 +287,7 @@ public:
 		~MetaWrite() {
 			if (rwl) {
 				rwl->write_unlock();
-				// WARN_PRINT(("Releasing metadata WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
+				// WARN_PRINT(("Releasing metadata WRITE lock in thread ID 0x" + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -302,7 +302,7 @@ public:
 		_FORCE_INLINE_ uint8_t *ptr() const { return mem; }
 
 		void acquire() {
-			// WARN_PRINT(("Acquiring data WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
+			// WARN_PRINT(("Acquiring data WRITE lock in thread ID 0x" + itoh(Thread::get_caller_id())).utf8().get_data());
 			rwl->write_lock();
 		}
 
@@ -321,7 +321,7 @@ public:
 		~DataWrite() {
 			if (rwl) {
 				rwl->write_unlock();
-				// WARN_PRINT(("Releasing data WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
+				// WARN_PRINT(("Releasing data WRITE lock in thread ID 0x" + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
