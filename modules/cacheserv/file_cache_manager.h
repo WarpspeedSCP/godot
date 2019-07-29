@@ -199,6 +199,8 @@ private:
 		memdelete(desc_info->internal_data_source);
 		desc_info->internal_data_source = NULL;
 		desc_info->dirty = false;
+		desc_info->valid = false;
+		desc_info->sem->post();
 
 		op_queue.unlock();
 	}
