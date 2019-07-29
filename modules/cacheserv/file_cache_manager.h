@@ -156,6 +156,13 @@ private:
 		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::STORE));
 	}
 
+	/**
+	 * Flushes dirty pages of the file. Removes any pending store ops for the file from the operation queue.
+	 *
+	 * Expects the file pointer to be valid.
+	 *
+	 * Leaves the file pointer valid.
+	 */
 	void do_flush_op(DescriptorInfo *desc_info) {
 		CRASH_COND(!(desc_info->internal_data_source));
 
@@ -179,6 +186,13 @@ private:
 		op_queue.unlock();
 	}
 
+	/**
+	 * Flushes dirty pages of the file. Removes all pending ops for the file from the operation queue.
+	 *
+	 * Expects the file pointer to be valid.
+	 *
+	 * Leaves the file pointer valid.
+	 */
 	void do_flush_close_op(DescriptorInfo *desc_info) {
 		CRASH_COND(!(desc_info->internal_data_source));
 		op_queue.lock();
