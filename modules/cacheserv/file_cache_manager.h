@@ -195,7 +195,7 @@ private:
 	 */
 	void do_flush_close_op(DescriptorInfo *desc_info) {
 		CRASH_COND(!(desc_info->internal_data_source));
-		op_queue.lock();
+		MutexLock ml(op_queue.client_mut);
 
 
 		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
@@ -216,7 +216,6 @@ private:
 		desc_info->valid = false;
 		desc_info->sem->post();
 
-		op_queue.unlock();
 	}
 
 	void enqueue_flush(DescriptorInfo *desc_info) {
