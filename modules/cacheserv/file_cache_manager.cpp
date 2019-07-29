@@ -97,7 +97,7 @@ FileCacheManager::~FileCacheManager() {
 
 RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 
-	//WARN_PRINTS(path + " " + itoh(p_mode));
+	// WARN_PRINTS(path + " " + itoh(p_mode) + " " + itoh(cache_policy));
 
 	ERR_FAIL_COND_V(path.empty(), RID());
 
@@ -113,7 +113,7 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 
 		ERR_COND_ACTION(
 				desc_info->valid,
-				String("This file is already open."),
+				String("The file " + path + " is already open."),
 				{ return RID(); });
 		CRASH_COND(desc_info->internal_data_source != NULL);
 
@@ -152,9 +152,6 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 
 void FileCacheManager::close(const RID rid) {
 
-	// TODO: Determine if this is necessary.
-	// MutexLock ml(mutex);
-
 	DescriptorInfo *const *elem = files.getptr(RID_REF_TO_DD);
 	ERR_FAIL_COND_MSG(!elem, String("No such file"))
 
@@ -164,7 +161,10 @@ void FileCacheManager::close(const RID rid) {
 		enqueue_flush_close(desc_info);
 	else
 		ERR_PRINTS("File already closed.");
-	
+
+	WARN_PRINTS("Closed file " + desc_info->path);
+
+	while(desc_info->valid == true) desc_info->sem->wait();
 }
 
 void FileCacheManager::permanent_close(const RID rid) {
@@ -906,6 +906,7 @@ void FileCacheManager::rp_keep(DescriptorInfo *desc_info, page_id *curr_page, fr
 
 		page_to_evict = (rng.randi() % 2) ? permanent_cached_pages.back()->get() : permanent_cached_pages.back()->prev()->get();
 
+		ERR_PRINTS("Removing permanent page " + itoh(page_to_evict) + " from permanent pages.")
 		permanent_cached_pages.erase(page_to_evict);
 
 		frame_to_evict = page_frame_map[page_to_evict];
