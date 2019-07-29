@@ -280,7 +280,7 @@ public:
 
 		for (List<uint32_t>::Element *i = keys.front(); i; i = i->next()) {
 
-			d[files[i->get()]->internal_data_source->get_path()] = files[i->get()]->to_variant(*this);
+			d[files[i->get()]->path] = files[i->get()]->to_variant(*this);
 		}
 
 		return Variant(d);
