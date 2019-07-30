@@ -319,7 +319,7 @@ void FileCacheManager::do_flush_close_op(DescriptorInfo *desc_info) {
 
 		for (int i = 0; i < desc_info->pages.size(); i++) {
 			if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
-				do_store_op(desc_info, page_frame_map[desc_info->pages[i]], desc_info->pages[i], page_frame_map[desc_info->pages[i]]);
+				do_store_op(desc_info, desc_info->pages[i], page_frame_map[desc_info->pages[i]], CS_GET_FILE_OFFSET_FROM_GUID(desc_info->pages[i]));
 			}
 		}
 
@@ -560,7 +560,8 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 			// size to the used_size value.
 			if (m.get_used_size() == CS_PAGE_SIZE) {}
 			else {
-				m.set_used_size(m.get_used_size() + initial_end_offset - initial_start_offset);
+				if(CS_PARTIAL_SIZE(initial_end_offset) > m.get_used_size())
+					m.set_used_size(CS_PARTIAL_SIZE(initial_end_offset));
 			}
 			m.set_dirty_true();
 		}
@@ -624,7 +625,8 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 			// size to the used_size value.
 			if (m.get_used_size() == CS_PAGE_SIZE) {}
 			else {
-				m.set_used_size(m.get_used_size() + temp_write_len);
+				if(CS_PARTIAL_SIZE(temp_write_len) > m.get_used_size())
+					m.set_used_size(CS_PARTIAL_SIZE(temp_write_len));
 			}
 			m.set_dirty_true();
 		}
