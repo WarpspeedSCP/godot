@@ -205,7 +205,7 @@ private:
 
 		for (int i = 0; i < desc_info->pages.size(); i++) {
 			if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
-				do_store_op(desc_info, page_frame_map[desc_info->pages[i]], desc_info->pages[i], page_frame_map[desc_info->pages[i]]);
+				do_store_op(desc_info, desc_info->pages[i], page_frame_map[desc_info->pages[i]], page_frame_map[desc_info->pages[i]]);
 			}
 		}
 
