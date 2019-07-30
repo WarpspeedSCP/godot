@@ -152,8 +152,16 @@ private:
 	}
 
 	// Expects that the page at the given offset is in the cache.
-	void enqueue_store(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
+	_FORCE_INLINE_ void enqueue_store(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
 		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::STORE));
+	}
+
+	_FORCE_INLINE_ void enqueue_flush(DescriptorInfo *desc_info) {
+		op_queue.priority_push(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH));
+	}
+
+	_FORCE_INLINE_ void enqueue_flush_close(DescriptorInfo *desc_info) {
+		op_queue.priority_push(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH_CLOSE));
 	}
 
 	/**
@@ -163,28 +171,7 @@ private:
 	 *
 	 * Leaves the file pointer valid.
 	 */
-	void do_flush_op(DescriptorInfo *desc_info) {
-		CRASH_COND(!(desc_info->internal_data_source));
-
-		op_queue.lock();
-
-
-		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
-			if (e->get().di == desc_info && e->get().type == CtrlOp::STORE)
-				e->erase();
-		}
-
-		int j = 0;
-		for (int i = 0; i < desc_info->pages.size(); i++) {
-			if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
-				do_store_op(desc_info, page_frame_map[desc_info->pages[i]], desc_info->pages[i], page_frame_map[desc_info->pages[i]]);
-
-				j += 1;
-			}
-		}
-
-		op_queue.unlock();
-	}
+	void do_flush_op(DescriptorInfo *desc_info);
 
 	/**
 	 * Flushes dirty pages of the file. Removes all pending ops for the file from the operation queue.
@@ -193,43 +180,7 @@ private:
 	 *
 	 * Leaves the file pointer valid.
 	 */
-	void do_flush_close_op(DescriptorInfo *desc_info) {
-		CRASH_COND(!(desc_info->internal_data_source));
-		MutexLock ml(op_queue.client_mut);
-
-
-		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
-			if (e->get().di == desc_info)
-				e->erase();
-		}
-
-		for (int i = 0; i < desc_info->pages.size(); i++) {
-			if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
-				do_store_op(desc_info, desc_info->pages[i], page_frame_map[desc_info->pages[i]], page_frame_map[desc_info->pages[i]]);
-			}
-		}
-
-		desc_info->internal_data_source->close();
-		memdelete(desc_info->internal_data_source);
-		desc_info->internal_data_source = NULL;
-		desc_info->dirty = false;
-		desc_info->valid = false;
-		desc_info->sem->post();
-
-	}
-
-	void enqueue_flush(DescriptorInfo *desc_info) {
-		op_queue.lock();
-		op_queue.queue.push_front(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH));
-		op_queue.unlock();
-	}
-
-	void enqueue_flush_close(DescriptorInfo *desc_info) {
-		//op_queue.lock();
-		op_queue.queue.push_front(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH_CLOSE));
-		op_queue.sem->post();
-		//op_queue.unlock();
-	}
+	void do_flush_close_op(DescriptorInfo *desc_info);
 
 protected:
 public:
@@ -327,7 +278,20 @@ public:
 
 	// Error _chmod(const String &p_path, int p_mod) { return ERR_UNAVAILABLE; }
 
-	// Returns an RID to an opened file.
+	/**
+	 * Returns an RID to an open file. If the file was previously tracked, it seeks to the offset of the file when it was closed.
+	 *
+	 * Returns a valid RID if:
+	 *
+	 * The file is cached for the first time. The file is opened with the mode and the cache policy specified.
+	 *
+	 * or
+	 *
+	 * The file is already tracked and is closed. The file is reopened with the mode and cache policy specified.
+	 *
+	 * Returns an invalid RID if the file is currently already open.
+	 * Returns an invalid RID if the file cannot be opened similarly to the normal FileAccess API.
+	 */
 	RID open(const String &path, int p_mode, int cache_policy);
 
 	// Close the file but keep its contents in the cache. None of the state information is invalidated.

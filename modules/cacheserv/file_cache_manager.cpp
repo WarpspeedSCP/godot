@@ -109,7 +109,7 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 		//WARN_PRINTS("file already exists, reopening.");
 
 		rid = rids[path];
-		DescriptorInfo *desc_info = files[rid.get_id() & 0x0000000000FFFFFF];
+		DescriptorInfo *desc_info = files[RID_REF_TO_DD];
 
 		ERR_COND_ACTION(
 				desc_info->valid,
@@ -118,16 +118,20 @@ RID FileCacheManager::open(const String &path, int p_mode, int cache_policy) {
 		CRASH_COND(desc_info->internal_data_source != NULL);
 
 		desc_info->internal_data_source = FileAccess::open(desc_info->path, p_mode);
+		// Seek to the previous offset.
 		seek(rid, files[RID_REF_TO_DD]->offset);
 		desc_info->valid = true;
-		// Let the IO thread know that the file can be read from.
-		desc_info->sem->post();
+		// // Let the IO thread know that the file can be read from.
+		// desc_info->sem->post();
 
-		if(desc_info->cache_policy != cache_policy) {
-			for(int i = 0; i < desc_info->pages.size(); ++i) {
-				CS_GET_CACHE_POLICY_FN(cache_removal_policies, desc_info->cache_policy)(desc_info->pages[i]);
-				CS_GET_CACHE_POLICY_FN(cache_insertion_policies, cache_policy)(desc_info->pages[i]);
+		if (desc_info->cache_policy != cache_policy) {
+			for (int i = 0; i < desc_info->pages.size(); ++i) {
+				CS_GET_CACHE_POLICY_FN(cache_removal_policies, desc_info->cache_policy)
+				(desc_info->pages[i]);
+				CS_GET_CACHE_POLICY_FN(cache_insertion_policies, cache_policy)
+				(desc_info->pages[i]);
 			}
+			desc_info->cache_policy = cache_policy;
 		}
 
 	} else {
@@ -164,7 +168,8 @@ void FileCacheManager::close(const RID rid) {
 
 	WARN_PRINTS("Closed file " + desc_info->path);
 
-	while(desc_info->valid == true) desc_info->sem->wait();
+	while (desc_info->valid == true)
+		desc_info->sem->wait();
 }
 
 void FileCacheManager::permanent_close(const RID rid) {
@@ -216,27 +221,25 @@ RID FileCacheManager::add_data_source(RID rid, FileAccess *data_source, int cach
 void FileCacheManager::remove_data_source(RID rid) {
 	DescriptorInfo *di = files[RID_REF_TO_DD];
 
-		for (int i = 0; i < di->pages.size(); i++) {
-			Frame::MetaWrite(
-					frames[page_frame_map[di->pages[i]]],
-					di->meta_lock)
-					.set_used(false)
-					.set_ready_false();
-			memset(
-					Frame::DataWrite(
-							frames[page_frame_map[di->pages[i]]],
-							di->sem,
-							di->data_lock,
+	for (int i = 0; i < di->pages.size(); i++) {
+		Frame::MetaWrite(
+				frames[page_frame_map[di->pages[i]]],
+				di->meta_lock)
+				.set_used(false)
+				.set_ready_false();
+		memset(
+				Frame::DataWrite(
+						frames[page_frame_map[di->pages[i]]],
+						di->sem,
+						di->data_lock,
 						true)
-							.ptr(),
-					0,
-					4096);
-		}
-		rids.erase(di->path);
-		files.erase(di->guid_prefix >> 40);
-		memdelete(di);
-
-
+						.ptr(),
+				0,
+				4096);
+	}
+	rids.erase(di->path);
+	files.erase(di->guid_prefix >> 40);
+	memdelete(di);
 }
 
 // !!! takes mutable references to all params.
@@ -246,7 +249,7 @@ void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, 
 	// Get data from data source somehow...
 
 	// Wait until the file is open.
-	while(desc_info->valid != true) {
+	while (desc_info->valid != true) {
 		desc_info->sem->wait();
 		//ERR_EXPLAIN("File not open!")
 		// CRASH_NOW()//(!desc_info->valid)
@@ -270,9 +273,9 @@ void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page,
 	// store back to data source somehow...
 
 	// Wait until the file is open.
-	if(!desc_info->valid) {
+	if (!desc_info->valid) {
 		ERR_EXPLAIN("File not open!")
-		CRASH_NOW()//(!desc_info->valid)
+		CRASH_NOW() //(!desc_info->valid)
 	}
 
 	if (check_incomplete_page_store(desc_info, curr_page, curr_frame, offset)) {
@@ -281,6 +284,53 @@ void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page,
 		ERR_PRINT("Wrote a page");
 	}
 }
+
+void FileCacheManager::do_flush_op(DescriptorInfo *desc_info) {
+	CRASH_COND(!(desc_info->internal_data_source));
+
+	op_queue.lock();
+
+	for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
+		if (e->get().di == desc_info && e->get().type == CtrlOp::STORE)
+			e->erase();
+	}
+
+	int j = 0;
+	for (int i = 0; i < desc_info->pages.size(); i++) {
+		if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
+			do_store_op(desc_info, page_frame_map[desc_info->pages[i]], desc_info->pages[i], page_frame_map[desc_info->pages[i]]);
+
+			j += 1;
+		}
+	}
+
+	op_queue.unlock();
+}
+
+void FileCacheManager::do_flush_close_op(DescriptorInfo *desc_info) {
+		CRASH_COND(!(desc_info->internal_data_source));
+		MutexLock ml(op_queue.client_mut);
+
+
+		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
+			if (e->get().di == desc_info)
+				e->erase();
+		}
+
+		for (int i = 0; i < desc_info->pages.size(); i++) {
+			if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
+				do_store_op(desc_info, page_frame_map[desc_info->pages[i]], desc_info->pages[i], page_frame_map[desc_info->pages[i]]);
+			}
+		}
+
+		desc_info->internal_data_source->close();
+		memdelete(desc_info->internal_data_source);
+		desc_info->internal_data_source = NULL;
+		desc_info->dirty = false;
+		desc_info->valid = false;
+		desc_info->sem->post();
+
+	}
 
 // !!! takes mutable references to all params.
 // The offset param is used to track temporary changes to file offset.
@@ -297,7 +347,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 				frames[curr_frame],
 				desc_info->sem,
 				desc_info->data_lock,
-			true);
+				true);
 
 		used_size = desc_info->internal_data_source->get_buffer(
 				w.ptr(),
@@ -305,7 +355,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 		ERR_EXPLAIN("File read returned " + itoh(used_size));
 
 		// Error has occurred.
-		CRASH_COND(used_size <= 0);
+		CRASH_COND(used_size < 0);
 		Frame::MetaWrite(
 				frames[curr_frame],
 				desc_info->meta_lock)
@@ -313,7 +363,9 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 				.set_ready_true(desc_info->sem, curr_page, curr_frame);
 	}
 	//ERR_PRINTS("Loaded " + itoh(used_size) + " from offset " + itoh(offset) + " with page " + itoh(curr_page) + " mapped to frame " + itoh(curr_frame))
-	return (used_size < CS_PAGE_SIZE);
+
+	// Assume no error if we get 0 bytes.
+	return (used_size < CS_PAGE_SIZE) && (used_size != 0);
 }
 
 // !!! takes mutable references to all params.
@@ -334,8 +386,10 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo
 	desc_info->internal_data_source->seek(CS_GET_PAGE(offset));
 	{
 		Frame::DataRead r(frames[curr_frame], desc_info->sem, desc_info->data_lock);
-		desc_info->internal_data_source->store_buffer(r.ptr(), CS_PAGE_SIZE);
-		Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_dirty_false(desc_info->sem);
+		Frame::MetaWrite m(frames[curr_frame], desc_info->meta_lock);
+
+		desc_info->internal_data_source->store_buffer(r.ptr(), m.get_used_size());
+		m.set_dirty_false(desc_info->sem);
 	}
 	return desc_info->internal_data_source->get_error() == ERR_FILE_CANT_WRITE;
 }
@@ -445,7 +499,7 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 
 	if (read_length > 0) //WARN_PRINTS("Unread length: " + itoh(length - read_length) + " bytes.")
 
-	CRASH_COND(read_length > 0);
+		CRASH_COND(read_length > 0);
 
 	// TODO: Document this. Reads that exceed EOF will cause the remaining buffer space to be zeroed out.
 	if ((desc_info->offset + length) / desc_info->total_size > 0) {
@@ -501,9 +555,17 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 					(uint8_t *)data + data_offset,
 					initial_end_offset - initial_start_offset);
 
-			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_dirty_true();
+			Frame::MetaWrite m(frames[curr_frame], desc_info->meta_lock);
+			// If we're using less than a full page, we add our current
+			// size to the used_size value.
+			if (m.get_used_size() == CS_PAGE_SIZE) {}
+			else {
+				m.set_used_size(m.get_used_size() + initial_end_offset - initial_start_offset);
+			}
+			m.set_dirty_true();
 		}
 
+		// If we've reached here, it means the cached file is dirty.
 		desc_info->dirty = true;
 		data_offset += (initial_end_offset - initial_start_offset);
 		write_length -= data_offset;
@@ -557,14 +619,21 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 					(uint8_t *)data + data_offset,
 					temp_write_len);
 
-			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_dirty_true();
+			Frame::MetaWrite m(frames[curr_frame], desc_info->meta_lock);
+			// If we're using less than a full page, we add our current
+			// size to the used_size value.
+			if (m.get_used_size() == CS_PAGE_SIZE) {}
+			else {
+				m.set_used_size(m.get_used_size() + temp_write_len);
+			}
+			m.set_dirty_true();
 		}
 		data_offset += temp_write_len;
 		write_length -= temp_write_len;
 	}
 	if (write_length > 0) //WARN_PRINTS("Unwritten length: " + itoh(length - write_length) + " bytes.")
 
-	CRASH_COND(write_length > 0);
+		CRASH_COND(write_length > 0);
 
 	// If the write exceeds the file's
 	desc_info->offset += data_offset;
@@ -1170,11 +1239,11 @@ void FileCacheManager::check_cache(const RID rid, size_t length) {
 	DescriptorInfo *desc_info = files[RID_REF_TO_DD];
 	if (length == CS_LEN_UNSPECIFIED) length = 8 * CS_PAGE_SIZE;
 
-	for (int i = CS_GET_PAGE(desc_info->offset); i < CS_GET_PAGE(desc_info->offset + length) + CS_PAGE_SIZE; i += CS_PAGE_SIZE) {
-		//WARN_PRINTS("curr offset for check_cache: " + itoh(i));
-		if (!get_or_do_page_op(desc_info, i)) {
+	for (page_id curr_page = CS_GET_PAGE(desc_info->offset); curr_page < CS_GET_PAGE(desc_info->offset + length) + CS_PAGE_SIZE; curr_page += CS_PAGE_SIZE) {
+
+		if (!get_or_do_page_op(desc_info, curr_page)) {
 			// TODO: reduce inconsistency here.
-			enqueue_load(desc_info, page_frame_map[desc_info->guid_prefix | i], i);
+			enqueue_load(desc_info, page_frame_map[desc_info->guid_prefix | curr_page], curr_page);
 		}
 	}
 }
