@@ -93,6 +93,15 @@ public:
 			sem->post();
 	}
 
+	/**
+	 * Pushes to the queue's front, so the pushed operation is processed ASAP.
+	 */
+	void priority_push(CtrlOp l) {
+		MutexLock ml = MutexLock(client_mut);
+			queue.push_front(l);
+			sem->post();
+	}
+
 };
 
 #endif //CTRL_QUEUE_H
