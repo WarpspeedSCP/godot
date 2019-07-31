@@ -255,7 +255,7 @@ protected:
 		ClassDB::bind_method(D_METHOD("store_csv_line"), &_FileAccessCached::store_csv_line);
 
 		ClassDB::bind_method(D_METHOD("seek", "position"), &_FileAccessCached::seek);
-		ClassDB::bind_method(D_METHOD("seek_end", "position"), &_FileAccessCached::seek_end);
+		ClassDB::bind_method(D_METHOD("seek_end", "position"), &_FileAccessCached::seek_end, DEFVAL(0));
 
 		ClassDB::bind_method(D_METHOD("eof_reached"), &_FileAccessCached::eof_reached);
 		ClassDB::bind_method(D_METHOD("flush"), &_FileAccessCached::flush);
@@ -305,7 +305,7 @@ public:
 	void seek(int64_t position) { fac.seek(position); }
 
 	void seek_end(int64_t position) {
-		fac.seek(position);
+		fac.seek_end(position);
 	}
 
 	void store_8(uint8_t value) { fac.store_8(value); }
