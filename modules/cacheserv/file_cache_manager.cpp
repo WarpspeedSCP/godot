@@ -689,7 +689,7 @@ size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 	// This executes on the main thread.
 	if (!op_queue.queue.empty()) {
 		// Lock the operation queue to prevent the IO thread from consuming any more pages.
-		op_queue.lock();
+		MutexLock ml(op_queue.client_mut);
 		//WARN_PRINT("Acquired client side queue lock.");
 		// Look for load ops with the same file that are farther than a threshold distance away from our effective offset and remove them.
 		for (List<CtrlOp>::Element *i = op_queue.queue.front(); i; i = i->next()) {
@@ -719,7 +719,6 @@ size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 			}
 		}
 		//WARN_PRINT("Released client side queue lock.");
-		op_queue.unlock();
 	}
 
 	// Update the offset.
