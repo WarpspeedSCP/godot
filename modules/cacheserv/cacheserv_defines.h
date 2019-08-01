@@ -49,7 +49,7 @@
 
 // Extract offset from GUID by masking the range.
 #define CS_GET_FILE_OFFSET_FROM_GUID(guid) ((guid)&0x000000FFFFFFFFFF)
-#define CS_GET_GUID_FROM_FILE_OFFSET(offset, guid_prefix) ((guid_prefix) | offset);
+#define CS_GET_GUID_FROM_FILE_OFFSET(offset, guid_prefix) ((guid_prefix) | offset)
 
 // Round off to the previous page offset.
 #define CS_GET_PAGE(a) ((a)-CS_PARTIAL_SIZE(a))
