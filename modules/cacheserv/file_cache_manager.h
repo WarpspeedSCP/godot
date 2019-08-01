@@ -157,10 +157,25 @@ private:
 	}
 
 	_FORCE_INLINE_ void enqueue_flush(DescriptorInfo *desc_info) {
+
+		MutexLock ml(op_queue.client_mut);
+
+		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
+			if (e->get().di == desc_info && e->get().type == CtrlOp::STORE)
+				e->erase();
+		}
+
 		op_queue.priority_push(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH));
 	}
 
 	_FORCE_INLINE_ void enqueue_flush_close(DescriptorInfo *desc_info) {
+		MutexLock ml(op_queue.client_mut);
+
+		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
+			if (e->get().di == desc_info)
+				e->erase();
+		}
+
 		op_queue.priority_push(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH_CLOSE));
 	}
 

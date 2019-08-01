@@ -288,13 +288,6 @@ void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page,
 void FileCacheManager::do_flush_op(DescriptorInfo *desc_info) {
 	CRASH_COND(!(desc_info->internal_data_source));
 
-	op_queue.lock();
-
-	for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
-		if (e->get().di == desc_info && e->get().type == CtrlOp::STORE)
-			e->erase();
-	}
-
 	int j = 0;
 	for (int i = 0; i < desc_info->pages.size(); i++) {
 		if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
@@ -303,34 +296,24 @@ void FileCacheManager::do_flush_op(DescriptorInfo *desc_info) {
 			j += 1;
 		}
 	}
-
-	op_queue.unlock();
 }
 
 void FileCacheManager::do_flush_close_op(DescriptorInfo *desc_info) {
-		CRASH_COND(!(desc_info->internal_data_source));
-		MutexLock ml(op_queue.client_mut);
+	CRASH_COND(!(desc_info->internal_data_source));
 
-
-		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e; e = e->next()) {
-			if (e->get().di == desc_info)
-				e->erase();
+	for (int i = 0; i < desc_info->pages.size(); i++) {
+		if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
+			do_store_op(desc_info, desc_info->pages[i], page_frame_map[desc_info->pages[i]], CS_GET_FILE_OFFSET_FROM_GUID(desc_info->pages[i]));
 		}
-
-		for (int i = 0; i < desc_info->pages.size(); i++) {
-			if (Frame::MetaRead(frames[page_frame_map[desc_info->pages[i]]], desc_info->meta_lock).get_dirty()) {
-				do_store_op(desc_info, desc_info->pages[i], page_frame_map[desc_info->pages[i]], CS_GET_FILE_OFFSET_FROM_GUID(desc_info->pages[i]));
-			}
-		}
-
-		desc_info->internal_data_source->close();
-		memdelete(desc_info->internal_data_source);
-		desc_info->internal_data_source = NULL;
-		desc_info->dirty = false;
-		desc_info->valid = false;
-		desc_info->sem->post();
-
 	}
+
+	desc_info->internal_data_source->close();
+	memdelete(desc_info->internal_data_source);
+	desc_info->internal_data_source = NULL;
+	desc_info->dirty = false;
+	desc_info->valid = false;
+	desc_info->sem->post();
+}
 
 // !!! takes mutable references to all params.
 // The offset param is used to track temporary changes to file offset.
@@ -558,9 +541,9 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 			Frame::MetaWrite m(frames[curr_frame], desc_info->meta_lock);
 			// If we're using less than a full page, we add our current
 			// size to the used_size value.
-			if (m.get_used_size() == CS_PAGE_SIZE) {}
-			else {
-				if(CS_PARTIAL_SIZE(initial_end_offset) > m.get_used_size())
+			if (m.get_used_size() == CS_PAGE_SIZE) {
+			} else {
+				if (CS_PARTIAL_SIZE(initial_end_offset) > m.get_used_size())
 					m.set_used_size(CS_PARTIAL_SIZE(initial_end_offset));
 			}
 			m.set_dirty_true();
@@ -623,9 +606,9 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 			Frame::MetaWrite m(frames[curr_frame], desc_info->meta_lock);
 			// If we're using less than a full page, we add our current
 			// size to the used_size value.
-			if (m.get_used_size() == CS_PAGE_SIZE) {}
-			else {
-				if(CS_PARTIAL_SIZE(temp_write_len) > m.get_used_size())
+			if (m.get_used_size() == CS_PAGE_SIZE) {
+			} else {
+				if (CS_PARTIAL_SIZE(temp_write_len) > m.get_used_size())
 					m.set_used_size(CS_PARTIAL_SIZE(temp_write_len));
 			}
 			m.set_dirty_true();
@@ -687,35 +670,40 @@ size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 		 * of waiting for a load to occur.
 		 */
 	// This executes on the main thread.
-	if (!op_queue.queue.empty()) {
-		// Lock the operation queue to prevent the IO thread from consuming any more pages.
+	{
 		MutexLock ml(op_queue.client_mut);
-		//WARN_PRINT("Acquired client side queue lock.");
-		// Look for load ops with the same file that are farther than a threshold distance away from our effective offset and remove them.
-		for (List<CtrlOp>::Element *i = op_queue.queue.front(); i; i = i->next()) {
-			if (
-					// If the type of operation is a load...
-					i->get().type == CtrlOp::LOAD &&
-					// And the operation is being performed on the same file...
-					i->get().di->guid_prefix == desc_info->guid_prefix &&
-					// And the distance between the pages
-					// in the vicinity of the new region
-					// and the current offset is large enough...
-					ABSDIFF(
-							eff_offset + (CS_FIFO_THRESH_DEFAULT * CS_PAGE_SIZE / 2),
-							i->get().offset) > CS_FIFO_THRESH_DEFAULT) {
+		if (!op_queue.queue.empty()) {
+			// Lock the operation queue to prevent the IO thread from consuming any more pages.
+			//WARN_PRINT("Acquired client side queue lock.");
+			// Look for load ops with the same file that are farther than a threshold distance away from our effective offset and remove them.
+			for (List<CtrlOp>::Element *i = op_queue.queue.front(); i;) {
+				if (
+						// If the type of operation is a load...
+						i->get().type == CtrlOp::LOAD &&
+						// And the operation is being performed on the same file...
+						i->get().di->guid_prefix == desc_info->guid_prefix &&
+						// And the distance between the pages
+						// in the vicinity of the new region
+						// and the current offset is large enough...
+						ABSDIFF(
+								eff_offset + (CS_FIFO_THRESH_DEFAULT * CS_PAGE_SIZE / 2),
+								i->get().offset) > CS_FIFO_THRESH_DEFAULT) {
 
-				CtrlOp l = i->get();
-				i->erase();
-				// We can unmap the pages.
-				//WARN_PRINTS("Unmapping out of range page " + itoh(CS_GET_PAGE(l.offset)) + " and frame " + itoh(l.frame) + " for file with RID " + itoh(rid.get_id()));
+					CtrlOp l = i->get();
+					
+					// We can unmap the pages.
+					WARN_PRINTS("Unmapping out of range page " + itoh(CS_GET_PAGE(l.offset)) + " and frame " + itoh(l.frame) + " for file with RID " + itoh(rid.get_id()));
 
-				l.di->pages.erase(CS_GET_PAGE(l.offset));
-				// Run the right cache removal policy function.
-				CS_GET_CACHE_POLICY_FN(cache_removal_policies, desc_info->cache_policy)
-				(desc_info->guid_prefix | CS_GET_PAGE(l.offset));
-				page_frame_map.erase(CS_GET_PAGE(l.offset));
-				Frame::MetaWrite(frames[l.frame], l.di->meta_lock).set_used(false).set_ready_false();
+					l.di->pages.erase(l.di->guid_prefix | l.offset);
+					// Run the right cache removal policy function.
+					CS_GET_CACHE_POLICY_FN(cache_removal_policies, desc_info->cache_policy)
+					(desc_info->guid_prefix | CS_GET_PAGE(l.offset));
+					page_frame_map.erase(CS_GET_PAGE(l.offset));
+					Frame::MetaWrite(frames[l.frame], l.di->meta_lock).set_used(false).set_ready_false();
+					List<CtrlOp>::Element *x = i->next();
+					i->erase();
+					i = x;
+				} else i = i->next();
 			}
 		}
 		//WARN_PRINT("Released client side queue lock.");
