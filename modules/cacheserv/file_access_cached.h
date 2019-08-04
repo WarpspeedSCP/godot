@@ -161,7 +161,7 @@ public:
 			o_length += cache_mgr->read(cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
 		if (p_length > o_length)
-			ERR_PRINTS("Read less than " + itoh(p_length) + " bytes.\n");
+			//ERR_PRINTS("Read less than " + itoh(p_length) + " bytes.\n");
 		return o_length;
 	} ///< get an array of bytes
 
@@ -187,8 +187,9 @@ public:
 			o_length += cache_mgr->write(cached_file, p_src + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
 
-		if (p_length > o_length)
-			ERR_PRINTS("Wrote less than " + itoh(p_length) + " bytes.\n");
+		if (p_length > o_length) {
+			//ERR_PRINTS("Wrote less than " + itoh(p_length) + " bytes.\n");
+		}
 	} ///< store an array of bytes
 
 

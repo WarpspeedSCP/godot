@@ -19,7 +19,7 @@ void FileAccessUnbufferedUnix::check_errors() const {}
 
 // Returns -1 if the value is less than 0 and the value otherwise.
 int FileAccessUnbufferedUnix::check_errors(int val) const {
-	ERR_PRINTS("Value is : " + itoh(val));
+	//ERR_PRINTS("Value is : " + itoh(val));
 	ERR_FAIL_COND_V(val < 0, -1);
 	return val;
 }
@@ -31,7 +31,7 @@ void FileAccessUnbufferedUnix::check_errors(int val, int expected, int mode) {
 	switch(mode) {
 		case CHK_MODE_SEEK:
 			if (val >= st.st_size) {
-				ERR_PRINTS("Seeked to EOF.");
+				//ERR_PRINTS("Seeked to EOF.");
 				last_error = ERR_FILE_EOF;
 			} else if (val != expected) {
 				ERR_EXPLAIN("Seeked to " + itoh(val) + " instead of " + itoh(expected));
@@ -40,7 +40,7 @@ void FileAccessUnbufferedUnix::check_errors(int val, int expected, int mode) {
 			return;
 		case CHK_MODE_WRITE:
 			if (val == -1) {
-				ERR_PRINTS("Write error with file " + this->path);
+				//ERR_PRINTS("Write error with file " + this->path);
 				last_error = ERR_FILE_CANT_WRITE;
 			}
 			// else if(val != expected) {

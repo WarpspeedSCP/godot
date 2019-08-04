@@ -219,13 +219,13 @@ public:
 
 		_FORCE_INLINE_ MetaWrite &set_dirty_true() {
 			alloc->dirty = true;
-			//WARN_PRINT("Dirty page.");
+			WARN_PRINT("Dirty page.");
 			return *this;
 		}
 
-		_FORCE_INLINE_ MetaWrite &set_dirty_false(Semaphore *dirty_sem) {
+		_FORCE_INLINE_ MetaWrite &set_dirty_false(Semaphore *dirty_sem, frame_id frame) {
 			alloc->dirty = false;
-			//WARN_PRINT("Dirty page written to disk.");
+			WARN_PRINTS("Dirty page " + itoh(frame) + " is clean.");
 			dirty_sem->post();
 			return *this;
 		}
@@ -250,9 +250,9 @@ public:
 			return *this;
 		}
 
-		_FORCE_INLINE_ MetaWrite &set_ready_false() {
+		_FORCE_INLINE_ MetaWrite &set_ready_false(frame_id frame) {
 			alloc->ready = false;
-			//WARN_PRINT("Part not ready.");
+			WARN_PRINTS("frame " + itoh(frame) + "not ready.");
 			return *this;
 		}
 

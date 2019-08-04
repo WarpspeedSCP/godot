@@ -92,7 +92,6 @@ class FileCacheManager : public Object {
 
 	static FileCacheManager *singleton;
 	RandomNumberGenerator rng;
-	bool exit_thread;
 	RID_Owner<CachedResourceHandle> handle_owner;
 	CtrlQueue op_queue;
 	Thread *thread, *th2;
@@ -109,9 +108,11 @@ public:
 
 	uint8_t *memory_region = NULL;
 	uint64_t step = 0;
+	size_t last_used = 0;
 	size_t available_space;
 	size_t used_space;
 	size_t total_space;
+	bool exit_thread;
 
 private:
 	static void thread_func(void *p_udata);

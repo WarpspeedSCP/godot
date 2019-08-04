@@ -50,10 +50,10 @@ private:
 
 		if(sig_quit) return CtrlOp();
 
-		CtrlOp l = queue.front()->get();
+		CtrlOp op = queue.front()->get();
 		queue.pop_front();
 
-		return l;
+		return op;
 	}
 
 	void lock() { server_mut->lock(); }
@@ -87,18 +87,18 @@ public:
 		memdelete(sem);
 	}
 
-	void push(CtrlOp l) {
+	void push(CtrlOp op) {
 		MutexLock ml = MutexLock(client_mut);
-			queue.push_back(l);
+			queue.push_back(op);
 			sem->post();
 	}
 
 	/**
 	 * Pushes to the queue's front, so the pushed operation is processed ASAP.
 	 */
-	void priority_push(CtrlOp l) {
+	void priority_push(CtrlOp op) {
 		MutexLock ml = MutexLock(client_mut);
-			queue.push_front(l);
+			queue.push_front(op);
 			sem->post();
 	}
 
