@@ -1095,23 +1095,24 @@ void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, fr
 bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offset) {
 
 	page_id curr_page = get_page_guid(desc_info, offset, true);
-	//WARN_PRINTS("query for offset " + itoh(offset) + " : " + itoh(curr_page));
+	WARN_PRINTS("query for offset " + itoh(offset) + " : " + itoh(curr_page));
 	frame_id curr_frame = CS_MEM_VAL_BAD;
 	bool ret;
 
 	if (curr_page == CS_MEM_VAL_BAD) {
 
 		curr_page = get_page_guid(desc_info, offset, false);
-		//WARN_PRINT(("result of query is: " + itoh(curr_page)).utf8().get_data());
+		WARN_PRINTS("Adding page : " + itoh(curr_page));
 
 		// Find a free frame.
 		for (
 			int i = (
 				(last_used + 1)
-				% 16
+				% CS_NUM_FRAMES
 			);
 			i != last_used;
-			i += (i % 16)) {
+			i = (i + 1) % 16
+		) {
 
 			// TODO: change this to something more efficient.
 			if (frames[i]->used == false) {
@@ -1127,7 +1128,7 @@ bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offse
 				CRASH_COND(curr_frame == CS_MEM_VAL_BAD);
 				CRASH_COND(page_frame_map.insert(curr_page, curr_frame) == NULL);
 
-				//WARN_PRINTS(itoh(curr_page) + " mapped to " + itoh(curr_frame));
+				WARN_PRINTS(itoh(curr_page) + " mapped to " + itoh(curr_frame));
 				CS_GET_CACHE_POLICY_FN(
 						cache_insertion_policies,
 						desc_info->cache_policy)
@@ -1138,16 +1139,16 @@ bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offse
 
 		// If there are no free frames, we evict an old one according to the paging/caching algo (TODO).
 		if (curr_frame == (data_descriptor)CS_MEM_VAL_BAD) {
-			//WARN_PRINT("must evict");
+			WARN_PRINT("must evict");
 			// Evict other page somehow...
 			// Remove prev page-frame mappings and associated pages.
 
-			//WARN_PRINTS("Cache policy: " + String(Dictionary(desc_info->to_variant(*this)).get("cache_policy", "-1")));
+			WARN_PRINTS("Cache policy: " + String(Dictionary(desc_info->to_variant(*this)).get("cache_policy", "-1")));
 
 			CS_GET_CACHE_POLICY_FN(cache_replacement_policies, desc_info->cache_policy)
 			(desc_info, &curr_page, &curr_frame);
 
-			//WARN_PRINTS("curr_page : " + itoh(curr_page) + " mapped to curr_frame: " + itoh(curr_frame));
+			WARN_PRINTS("curr_page : " + itoh(curr_page) + " mapped to curr_frame: " + itoh(curr_frame));
 		}
 
 		desc_info->pages.ordered_insert(curr_page);
