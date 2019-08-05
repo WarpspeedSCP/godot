@@ -1116,11 +1116,14 @@ bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offse
 
 			// TODO: change this to something more efficient.
 			if (frames[i]->used == false) {
-				Frame::MetaWrite(
-						frames[i], desc_info->meta_lock)
-						.set_used(true)
-						.set_last_use(step)
-						.set_ready_false(i);
+				Frame::MetaWrite w(frames[i], desc_info->meta_lock);
+				w.set_used(true)
+				 .set_last_use(step);
+
+				// Prevents deadlocking on io thread due to checking ready flag before writing data in do_store_op.
+				while(w.get_dirty());
+				w.set_ready_false(i);
+
 
 				curr_frame = i;
 				last_used = i;
@@ -1207,7 +1210,7 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 	do {
 
-		//ERR_PRINTS("Thread" + itoh(fcs.thread->get_id()) + "Waiting for message.");
+		ERR_PRINTS("Thread" + itoh(fcs.thread->get_id()) + "Waiting for message.");
 		CtrlOp l = fcs.op_queue.pop();
 		//ERR_PRINT("got message");
 		if (l.type == CtrlOp::QUIT)
@@ -1215,29 +1218,28 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 		ERR_FAIL_COND(l.di == NULL);
 		if (l.di->valid == false) continue;
-			// ERR_CONTINUE(l.di == NULL);
 
 		page_id curr_page = get_page_guid(l.di, l.offset, false);
 		frame_id curr_frame = fcs.page_frame_map[curr_page];
 
 		switch (l.type) {
 			case CtrlOp::LOAD: {
-				//ERR_PRINTS("Performing load for offset " + itoh(l.offset) + "\nIn pages: " + itoh(CS_GET_PAGE(l.offset)) + "\nCurr page: " + itoh(curr_page) + "\nCurr frame: " + itoh(curr_frame));
+				ERR_PRINTS("file: " + l.di->path + " Performing load for offset " + itoh(l.offset) + "\nIn pages: " + itoh(CS_GET_PAGE(l.offset)) + "\nCurr page: " + itoh(curr_page) + "\nCurr frame: " + itoh(curr_frame));
 				fcs.do_load_op(l.di, curr_page, curr_frame, l.offset);
 				break;
 			}
 			case CtrlOp::STORE: {
-				//ERR_PRINT("Performing store.");
+				ERR_PRINTS("file: " + l.di->path + " Performing store.");
 				fcs.do_store_op(l.di, curr_page, curr_frame, l.offset);
 				break;
 			}
 			case CtrlOp::FLUSH: {
-				//ERR_PRINT("Performing flush store.");
+				ERR_PRINTS("file: " + l.di->path + " Performing flush store.");
 				fcs.do_flush_op(l.di);
 				break;
 			}
 			case CtrlOp::FLUSH_CLOSE: {
-				//ERR_PRINT("Performing flush store and close.")
+				ERR_PRINTS("file: " + l.di->path + " Performing flush store and close.")
 				fcs.do_flush_close_op(l.di);
 				break;
 			}
@@ -1249,6 +1251,8 @@ void FileCacheManager::thread_func(void *p_udata) {
 void FileCacheManager::check_cache(const RID rid, size_t length) {
 
 	DescriptorInfo *desc_info = files[RID_REF_TO_DD];
+	if(desc_info->path == "out.log")
+		ERR_PRINT("abc");
 	if (length == CS_LEN_UNSPECIFIED) length = 8 * CS_PAGE_SIZE;
 
 	for (page_id curr_page = CS_GET_PAGE(desc_info->offset); curr_page < CS_GET_PAGE(desc_info->offset + length) + CS_PAGE_SIZE; curr_page += CS_PAGE_SIZE) {
