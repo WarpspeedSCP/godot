@@ -103,7 +103,9 @@ public:
 		// A dirty page that isn't ready cannot exist.
 		CRASH_COND(!ready)
 		dirty = true;
-		WARN_PRINT("Dirty page.");
+		String a;
+		a.parse_utf8((const char *)(this->memory_region), 4095);
+		WARN_PRINTS("Dirty page.\n\n" + a + "\n\n");
 		return *this;
 	}
 
