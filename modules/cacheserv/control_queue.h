@@ -38,17 +38,17 @@ class CtrlQueue {
 
 private:
 	List<CtrlOp> queue;
-	Mutex *client_mut;
-	Mutex *server_mut;
+	Mutex *mut;
 	Semaphore *sem;
 
 	CtrlOp pop() {
-		MutexLock ml(server_mut);
 		while(queue.empty()) {
 			sem->wait();
 		}
 
 		if(sig_quit) return CtrlOp();
+
+		MutexLock ml(mut);
 
 		CtrlOp op = queue.front()->get();
 		queue.pop_front();
@@ -56,50 +56,36 @@ private:
 		return op;
 	}
 
-	void lock() { server_mut->lock(); }
-	void unlock() { server_mut->unlock(); }
-
-	// CtrlOp try_pop() {
-	// 	if(queue.empty()) {
-	// 		return CtrlOp();
-	// 	}
-
-	// 	CtrlOp l = queue.front()->get();
-	// 	queue.pop_front();
-
-	// 	return l;
-	// }
-
 public:
 
 	bool sig_quit;
 
 	CtrlQueue() {
-		client_mut = Mutex::create();
-		server_mut = Mutex::create();
+		mut = Mutex::create();
 		sem = Semaphore::create();
 		sig_quit = false;
 	}
 
 	~CtrlQueue() {
-		memdelete(client_mut);
-		memdelete(server_mut);
+		memdelete(mut);
 		memdelete(sem);
 	}
 
 	void push(CtrlOp op) {
-		MutexLock ml = MutexLock(client_mut);
+		MutexLock ml = MutexLock(mut);
 			queue.push_back(op);
 			sem->post();
+		WARN_PRINTS("Pushed op")
 	}
 
 	/**
 	 * Pushes to the queue's front, so the pushed operation is processed ASAP.
 	 */
 	void priority_push(CtrlOp op) {
-		MutexLock ml = MutexLock(client_mut);
+		MutexLock ml = MutexLock(mut);
 			queue.push_front(op);
 			sem->post();
+		WARN_PRINTS("Priority pushed op.")
 	}
 
 };
