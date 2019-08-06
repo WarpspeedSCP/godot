@@ -160,8 +160,10 @@ public:
 			cache_mgr->check_cache(cached_file, CS_PAGE_SIZE * 4);
 			o_length += cache_mgr->read(cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
-		if (p_length > o_length)
-			//ERR_PRINTS("Read less than " + itoh(p_length) + " bytes.\n");
+		if (p_length > o_length) {
+			ERR_PRINTS("Read less than " + itoh(p_length) + " bytes.\n");
+
+		}
 		return o_length;
 	} ///< get an array of bytes
 

@@ -22,8 +22,7 @@ DescriptorInfo::DescriptorInfo(FileAccess *fa, page_id new_range, int cache_poli
 	total_size = internal_data_source->get_len();
 	path = internal_data_source->get_path();
 	sem = Semaphore::create();
-	meta_lock = RWLock::create();
-	data_lock = RWLock::create();
+	lock = RWLock::create();
 }
 
 Variant DescriptorInfo::to_variant(const FileCacheManager &p) {

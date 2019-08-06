@@ -144,8 +144,8 @@ private:
 			// Not sure if this can cause a deadlock yet.
 			// TODO: Investigate possible deadlocks.
 			WARN_PRINTS("Accessed out of bounds, reading zeroes.");
-			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->data_lock, true).ptr(), 0, CS_PAGE_SIZE);
-			Frame::MetaWrite(frames[curr_frame], desc_info->meta_lock).set_ready_true(desc_info->sem, CS_GET_PAGE(offset), curr_frame);
+			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->lock, true).ptr(), 0, CS_PAGE_SIZE);
+			frames[curr_frame]->set_ready_true(desc_info->sem, CS_GET_PAGE(offset), curr_frame);
 			WARN_PRINTS("Finished OOB access.");
 		} else {
 			op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
@@ -356,15 +356,9 @@ struct LRUComparator {
 	LRUComparator() :
 			fcm(_FileCacheManager::get_sss()) {}
 	_FORCE_INLINE_ bool operator()(page_id p1, page_id p2) {
-		size_t a = Frame::MetaRead(
-				fcm->frames.operator[](fcm->page_frame_map[p1]),
-				fcm->files.operator[]((data_descriptor)(p1 >> 40))->meta_lock)
-						   .get_last_use();
+		size_t a = fcm->frames[fcm->page_frame_map[p1]]->get_last_use();
 
-		size_t b = Frame::MetaRead(
-				fcm->frames.operator[](fcm->page_frame_map[p2]),
-				fcm->files.operator[]((data_descriptor)(p2 >> 40))->meta_lock)
-						   .get_last_use();
+		size_t b = fcm->frames[fcm->page_frame_map[p2]]->get_last_use();
 		bool x = a > b;
 
 		return x;

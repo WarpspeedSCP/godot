@@ -34,8 +34,8 @@
 #include "core/map.h"
 #include "core/object.h"
 #include "core/os/file_access.h"
-#include "core/os/semaphore.h"
 #include "core/os/rw_lock.h"
+#include "core/os/semaphore.h"
 #include "core/os/thread.h"
 #include "core/reference.h"
 #include "core/rid.h"
@@ -48,7 +48,7 @@
 // Int to hex string.
 _FORCE_INLINE_ String itoh(size_t num) {
 	char x[100];
-	snprintf(x, 100,"0x%lx\0", (unsigned long)num);
+	snprintf(x, 100, "0x%lx\0", (unsigned long)num);
 	return String(x);
 }
 
@@ -69,7 +69,7 @@ private:
 	uint8_t *const memory_region;
 	uint32_t ts_last_use;
 	uint16_t used_size;
-	bool dirty;
+	volatile bool dirty;
 	volatile bool ready;
 	volatile bool used;
 
@@ -80,10 +80,7 @@ public:
 			ts_last_use(0),
 			used(false),
 			dirty(false),
-			ready(false)
-	// rd_count(0),
-	// wr_lock(0)
-	{}
+			ready(false) {}
 
 	explicit Frame(
 			uint8_t *i_memory_region) :
@@ -93,13 +90,88 @@ public:
 			ts_last_use(0),
 			used(false),
 			dirty(false),
-			ready(false)
-	// rd_count(0),
-	// wr_lock(0)
-	{}
+			ready(false) {}
 
 	~Frame() {
+	}
 
+	_FORCE_INLINE_ bool get_dirty() {
+		return dirty;
+	}
+
+	_FORCE_INLINE_ Frame &set_dirty_true() {
+		// A dirty page that isn't ready cannot exist.
+		CRASH_COND(!ready)
+		dirty = true;
+		WARN_PRINT("Dirty page.");
+		return *this;
+	}
+
+	_FORCE_INLINE_ Frame &set_dirty_false(Semaphore *dirty_sem, frame_id frame) {
+		// Apage which is dirty as well as not ready is in an invalid state.
+		CRASH_COND(!ready)
+		dirty = false;
+		WARN_PRINTS("Dirty page " + itoh(frame) + " is clean.");
+		dirty_sem->post();
+		return *this;
+	}
+
+	_FORCE_INLINE_ bool get_used() {
+		return used;
+	}
+
+	_FORCE_INLINE_ Frame &set_used(bool in) {
+		// All io ops must be completed (page must be ready and not dirty) for this transition to be valid.
+		CRASH_COND(dirty || !ready)
+		used = in;
+		return *this;
+	}
+
+	_FORCE_INLINE_ bool get_ready() {
+		return ready;
+	}
+
+	_FORCE_INLINE_ Frame &set_ready_true(Semaphore *ready_sem, page_id page, frame_id frame) {
+		// A page cannot be dirty before it is ready.
+		CRASH_COND(dirty)
+		ready = true;
+		ready_sem->post();
+		WARN_PRINTS("Part ready for page " + itoh(page) + " and frame " + itoh(frame) + " .");
+		return *this;
+	}
+
+	_FORCE_INLINE_ Frame &set_ready_false(frame_id frame) {
+		// A page that is dirty must always be ready.
+		CRASH_COND(dirty)
+		ready = false;
+		WARN_PRINTS("frame " + itoh(frame) + "not ready.");
+		return *this;
+	}
+
+	_FORCE_INLINE_ uint32_t get_last_use() {
+		return ts_last_use;
+	}
+
+	_FORCE_INLINE_ Frame &set_last_use(uint32_t in) {
+		//
+		CRASH_COND(dirty)
+		ts_last_use = in;
+		return *this;
+	}
+
+	_FORCE_INLINE_ Frame &wait_clean(Semaphore *sem) {
+		while(dirty != false) sem->wait();
+		return *this;
+	}
+
+
+	_FORCE_INLINE_ uint16_t get_used_size() {
+		return used_size;
+	}
+
+	_FORCE_INLINE_ Frame &set_used_size(uint16_t in) {
+		used_size = in;
+		return *this;
 	}
 
 	Variant to_variant() const {
@@ -114,56 +186,6 @@ public:
 
 		return Variant(a);
 	}
-
-
-	class MetaRead {
-	private:
-		const Frame *alloc;
-		RWLock *rwl;
-
-	public:
-		_FORCE_INLINE_ uint16_t get_used_size() {
-			return alloc->used_size;
-		}
-
-		_FORCE_INLINE_ bool get_dirty() {
-			return alloc->dirty;
-		}
-
-		_FORCE_INLINE_ bool get_used() {
-			return alloc->used;
-		}
-
-		_FORCE_INLINE_ uint32_t get_last_use() {
-			return alloc->ts_last_use;
-		}
-
-		_FORCE_INLINE_ bool get_ready() {
-			return alloc->ready;
-		}
-
-		void acquire() {
-			// WARN_PRINTS("Acquiring metadata READ lock in thread ID " + itoh(Thread::get_caller_id()));
-			rwl->read_lock();
-		}
-
-		MetaRead() :
-				alloc(NULL),
-				rwl(NULL) {}
-
-		MetaRead(const Frame *alloc, RWLock *meta_lock) :
-				alloc(alloc),
-				rwl(meta_lock) {
-			acquire();
-		}
-
-		~MetaRead() {
-			if (rwl) {
-				rwl->read_unlock();
-				// WARN_PRINT(("Released metadata READ lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
-			}
-		}
-	};
 
 	class DataRead {
 	private:
@@ -185,7 +207,8 @@ public:
 		DataRead(const Frame *alloc, Semaphore *ready_sem, RWLock *data_lock) :
 				rwl(data_lock),
 				mem(alloc->memory_region) {
-			while (!(alloc->ready)) ready_sem->wait();
+			while (!(alloc->ready))
+				ready_sem->wait();
 			// WARN_PRINT(("Acquiring data READ lock in thread ID "  + itoh(Thread::get_caller_id()) ).utf8().get_data());
 			acquire();
 		}
@@ -194,100 +217,6 @@ public:
 			if (rwl) {
 				rwl->read_unlock();
 				// WARN_PRINT(("Releasing data READ lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
-			}
-		}
-	};
-
-	class MetaWrite {
-	private:
-		Frame *alloc;
-		RWLock *rwl;
-
-	public:
-		_FORCE_INLINE_ uint16_t get_used_size() {
-			return alloc->used_size;
-		}
-
-		_FORCE_INLINE_ MetaWrite &set_used_size(uint16_t in) {
-			alloc->used_size = in;
-			return *this;
-		}
-
-		_FORCE_INLINE_ bool get_dirty() {
-			return alloc->dirty;
-		}
-
-		_FORCE_INLINE_ MetaWrite &set_dirty_true() {
-			alloc->dirty = true;
-			WARN_PRINT("Dirty page.");
-			return *this;
-		}
-
-		_FORCE_INLINE_ MetaWrite &set_dirty_false(Semaphore *dirty_sem, frame_id frame) {
-			alloc->dirty = false;
-			WARN_PRINTS("Dirty page " + itoh(frame) + " is clean.");
-			dirty_sem->post();
-			return *this;
-		}
-
-		_FORCE_INLINE_ bool get_used() {
-			return alloc->used;
-		}
-
-		_FORCE_INLINE_ MetaWrite &set_used(bool in) {
-			alloc->used = in;
-			return *this;
-		}
-
-		_FORCE_INLINE_ bool get_ready() {
-			return alloc->ready;
-		}
-
-		_FORCE_INLINE_ MetaWrite &set_ready_true(Semaphore *ready_sem, page_id page, frame_id frame) {
-			alloc->ready = true;
-			ready_sem->post();
-			WARN_PRINTS("Part ready for page " + itoh(page) + " and frame " + itoh(frame) + " .");
-			return *this;
-		}
-
-		_FORCE_INLINE_ MetaWrite &set_ready_false(frame_id frame) {
-			alloc->ready = false;
-			WARN_PRINTS("frame " + itoh(frame) + "not ready.");
-			return *this;
-		}
-
-		_FORCE_INLINE_ uint32_t get_last_use() {
-			return alloc->ts_last_use;
-		}
-
-		_FORCE_INLINE_ MetaWrite &set_last_use(uint32_t in) {
-			alloc->ts_last_use = in;
-			return *this;
-		}
-
-		void acquire() {
-			// WARN_PRINT(("Acquiring metadata WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
-			rwl->write_lock();
-		}
-
-		Frame *operator->() {
-			return alloc;
-		}
-
-		MetaWrite() :
-				alloc(NULL),
-				rwl(NULL) {}
-
-		MetaWrite(Frame *const alloc, RWLock *meta_lock) :
-				alloc(alloc),
-				rwl(meta_lock) {
-			acquire();
-		}
-
-		~MetaWrite() {
-			if (rwl) {
-				rwl->write_unlock();
-				// WARN_PRINT(("Releasing metadata WRITE lock in thread ID " + itoh(Thread::get_caller_id())).utf8().get_data());
 			}
 		}
 	};
@@ -313,8 +242,9 @@ public:
 		DataWrite(Frame *const p_alloc, Semaphore *dirty_sem, RWLock *data_lock, bool is_io_op) :
 				rwl(data_lock),
 				mem(p_alloc->memory_region) {
-			if(is_io_op)
-				while ( p_alloc->dirty ) dirty_sem->wait();
+			if (is_io_op)
+				while (p_alloc->dirty)
+					dirty_sem->wait();
 			acquire();
 		}
 
@@ -337,19 +267,18 @@ struct DescriptorInfo {
 	int max_pages;
 	FileAccess *internal_data_source;
 	Semaphore *sem;
-	RWLock *meta_lock;
-	RWLock *data_lock;
+	RWLock *lock;
 	bool valid;
 	bool dirty;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
 	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix, int cache_policy);
 	~DescriptorInfo() {
-		while (dirty);
-			//sem->wait();
+		while (dirty)
+			;
+		//sem->wait();
 		memdelete(sem);
-		memdelete(meta_lock);
-		memdelete(data_lock);
+		memdelete(lock);
 	}
 
 	Variant to_variant(const FileCacheManager &p);
