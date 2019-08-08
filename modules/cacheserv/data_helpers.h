@@ -62,6 +62,35 @@ struct DescriptorInfo;
 
 class FileCacheManager;
 
+struct DescriptorInfo {
+	size_t offset;
+	size_t total_size;
+	uint64_t guid_prefix;
+	Vector<page_id> pages;
+	String path;
+	int cache_policy;
+	int max_pages;
+	FileAccess *internal_data_source;
+	Semaphore *ready_sem;
+	Semaphore *dirty_sem;
+	RWLock *lock;
+	bool valid;
+	bool dirty;
+
+	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
+	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix, int cache_policy);
+	~DescriptorInfo() {
+		while (dirty)
+			;
+		//sem->wait();
+		memdelete(ready_sem);
+		memdelete(dirty_sem);
+		memdelete(lock);
+	}
+
+	Variant to_variant(const FileCacheManager &p);
+};
+
 struct Frame {
 	friend class FileCacheManager;
 
@@ -257,33 +286,6 @@ public:
 			}
 		}
 	};
-};
-
-struct DescriptorInfo {
-	size_t offset;
-	size_t total_size;
-	uint64_t guid_prefix;
-	Vector<page_id> pages;
-	String path;
-	int cache_policy;
-	int max_pages;
-	FileAccess *internal_data_source;
-	Semaphore *sem;
-	RWLock *lock;
-	bool valid;
-	bool dirty;
-
-	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
-	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix, int cache_policy);
-	~DescriptorInfo() {
-		while (dirty)
-			;
-		//sem->wait();
-		memdelete(sem);
-		memdelete(lock);
-	}
-
-	Variant to_variant(const FileCacheManager &p);
 };
 
 #endif // !CACHE_INFO_TABLE_H
