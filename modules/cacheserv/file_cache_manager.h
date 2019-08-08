@@ -117,9 +117,7 @@ public:
 private:
 	static void thread_func(void *p_udata);
 
-	/**
-	 * Register a file handle with the cache manager. This function takes a pointer to a FileAccess object,  so anything that implements the FileAccess API (from the file system, or from the network)  can act as a data source.
-	 */
+	// Register a file handle with the cache manager. This function takes a pointer to a FileAccess object,  so anything that implements the FileAccess API (from the file system, or from the network)  can act as a data source.
 	RID add_data_source(RID rid, FileAccess *data_source, int cache_policy);
 	void remove_data_source(RID rid);
 
@@ -143,22 +141,18 @@ private:
 
 	void enqueue_flush_close(DescriptorInfo *desc_info);
 
-	/**
-	 * Flushes dirty pages of the file. Removes any pending store ops for the file from the operation queue.
-	 *
-	 * Expects the file pointer to be valid.
-	 *
-	 * Leaves the file pointer valid.
-	 */
+	// Flushes dirty pages of the file. Removes any pending store ops for the file from the operation queue.
+	//
+	// Expects the file pointer to be valid.
+	//
+	// Leaves the file pointer valid.
 	void do_flush_op(DescriptorInfo *desc_info);
 
-	/**
-	 * Flushes dirty pages of the file. Removes all pending ops for the file from the operation queue.
-	 *
-	 * Expects the file pointer to be valid.
-	 *
-	 * Leaves the file pointer valid.
-	 */
+	// Flushes dirty pages of the file. Removes all pending ops for the file from the operation queue.
+	//
+	// Expects the file pointer to be valid.
+	//
+	// Leaves the file pointer valid.
 	void do_flush_close_op(DescriptorInfo *desc_info);
 
 protected:
@@ -211,6 +205,27 @@ public:
 	FileCacheManager();
 	~FileCacheManager();
 
+	// Returns an RID to an open file. If the file was previously tracked, it seeks to the offset of the file when it was closed.
+	//
+	// Returns a valid RID if:
+	//
+	// The file is cached for the first time. The file is opened with the mode and the cache policy specified.
+	//
+	// or
+	//
+	// The file is already tracked and is closed. The file is reopened with the mode and cache policy specified.
+	//
+	// Returns an invalid RID if the file is currently already open.
+	// Returns an invalid RID if the file cannot be opened similarly to the normal FileAccess API.
+	RID open(const String &path, int p_mode, int cache_policy);
+
+	// Close the file but keep its contents in the cache. None of the state information is invalidated.
+	void close(RID rid);
+
+	// Invalidates the RID. it *will not* be valid after a call to this function.
+	void permanent_close(RID rid);
+
+
 	size_t read(RID rid, void *const buffer, size_t length);
 	size_t write(RID rid, const void *const data, size_t length);
 	size_t seek(RID rid, int64_t new_offset, int mode);
@@ -257,30 +272,6 @@ public:
 
 	// Error _chmod(const String &p_path, int p_mod) { return ERR_UNAVAILABLE; }
 
-	/**
-	 * Returns an RID to an open file. If the file was previously tracked, it seeks to the offset of the file when it was closed.
-	 *
-	 * Returns a valid RID if:
-	 *
-	 * The file is cached for the first time. The file is opened with the mode and the cache policy specified.
-	 *
-	 * or
-	 *
-	 * The file is already tracked and is closed. The file is reopened with the mode and cache policy specified.
-	 *
-	 * Returns an invalid RID if the file is currently already open.
-	 * Returns an invalid RID if the file cannot be opened similarly to the normal FileAccess API.
-	 */
-	RID open(const String &path, int p_mode, int cache_policy);
-
-	// Close the file but keep its contents in the cache. None of the state information is invalidated.
-	void close(RID rid);
-
-	// Invalidates the RID. it *will not* be valid after a call to this function.
-	void permanent_close(RID rid);
-
-	Error reopen(RID rid, int mode); ///< does not change the AccessType
-
 	void lock();
 	void unlock();
 };
@@ -307,21 +298,29 @@ public:
 	};
 
 	_FileCacheManager();
-	static FileCacheManager *get_sss() { return FileCacheManager::get_singleton(); }
 	static _FileCacheManager *get_singleton();
 	Variant get_state() { return FileCacheManager::get_singleton()->_get_state(); }
 };
 
 VARIANT_ENUM_CAST(_FileCacheManager::CachePolicy);
 
+
+// A comparator functor to sort page IDs according to the LRU paging algorithm.
 struct LRUComparator {
 	const FileCacheManager *const fcm;
+	
 	LRUComparator() :
-			fcm(_FileCacheManager::get_sss()) {}
+			fcm(FileCacheManager::get_singleton()) {}
+
 	_FORCE_INLINE_ bool operator()(page_id p1, page_id p2) {
 		size_t a = fcm->frames[fcm->page_frame_map[p1]]->get_last_use();
 
 		size_t b = fcm->frames[fcm->page_frame_map[p2]]->get_last_use();
+
+		// Older pages have lower last_use values.
+		// This means that to sort by longest age we must compare for the least value of last_use.
+		// if x == false: page p1 is younger than p2.
+		// else: page p1 is older than p2.
 		bool x = a > b;
 
 		return x;

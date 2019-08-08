@@ -193,12 +193,11 @@ void FileCacheManager::permanent_close(const RID rid) {
 // 	}
 // }
 
-/**
- * Register a file handle with the cache manager.
- * This function takes a pointer to a FileAccess object,
- * so anything that implements the FileAccess API (from the file system, or from the network)
- * can act as a data source.
- */
+
+ // Register a file handle with the cache manager.
+ // This function takes a pointer to a FileAccess object,
+ // so anything that implements the FileAccess API (from the file system, or from the network)
+ // can act as a data source.
 RID FileCacheManager::add_data_source(RID rid, FileAccess *data_source, int cache_policy) {
 
 	CRASH_COND(rid.is_valid() == false);
@@ -208,10 +207,6 @@ RID FileCacheManager::add_data_source(RID rid, FileAccess *data_source, int cach
 	files[dd]->valid = true;
 
 	const data_descriptor *key = files.next(NULL);
-
-	// for (; key; key = files.next(key)) {
-	// 	printf("\t\t%lx\n", files[*key]);
-	// }
 
 	CRASH_COND(files[dd] == NULL);
 
@@ -225,20 +220,23 @@ void FileCacheManager::remove_data_source(RID rid) {
 	DescriptorInfo *di = files[RID_REF_TO_DD];
 
 	for (int i = 0; i < di->pages.size(); i++) {
-		(frames[page_frame_map[di->pages[i]]])
-				->wait_clean(di->dirty_sem)
-				.set_ready_true(di->ready_sem, di->pages[i], page_frame_map[di->pages[i]])
-				.set_used(false)
-				.set_ready_false(page_frame_map[di->pages[i]]);
+		
+		frames[page_frame_map[di->pages[i]]]->wait_clean(di->dirty_sem)
+			.set_ready_true(di->ready_sem, di->pages[i], page_frame_map[di->pages[i]])
+			.set_used(false)
+			.set_ready_false(page_frame_map[di->pages[i]]);
+		
 		memset(
-				Frame::DataWrite(
-						frames[page_frame_map[di->pages[i]]],
-						di,
-						true)
-						.ptr(),
-				0,
-				4096);
+			Frame::DataWrite(
+				frames[page_frame_map[di->pages[i]]],
+				di,
+				true
+			).ptr(),
+			0,
+			4096
+		);
 	}
+
 	rids.erase(di->path);
 	files.erase(di->guid_prefix >> 40);
 	memdelete(di);
