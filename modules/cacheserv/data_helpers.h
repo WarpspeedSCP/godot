@@ -139,7 +139,7 @@ public:
 	}
 
 	_FORCE_INLINE_ Frame &set_dirty_false(Semaphore *dirty_sem, frame_id frame) {
-		// Apage which is dirty as well as not ready is in an invalid state.
+		// A page which is dirty as well as not ready is in an invalid state.
 		CRASH_COND(!ready)
 		dirty = false;
 		WARN_PRINTS("Dirty page " + itoh(frame) + " is clean.");
@@ -152,8 +152,8 @@ public:
 	}
 
 	_FORCE_INLINE_ Frame &set_used(bool in) {
-		// All io ops must be completed (page must be ready and not dirty) for this transition to be valid.
-		CRASH_COND(dirty || !ready)
+		// All io ops must be completed (page must not be dirty) for this transition to be valid.
+		CRASH_COND(dirty)
 		used = in;
 		return *this;
 	}
@@ -164,7 +164,7 @@ public:
 
 	_FORCE_INLINE_ Frame &set_ready_true(Semaphore *ready_sem, page_id page, frame_id frame) {
 		// A page cannot be dirty before it is ready.
-		CRASH_COND(dirty)
+		CRASH_COND(!ready && dirty)
 		ready = true;
 		ready_sem->post();
 		WARN_PRINTS("Part ready for page " + itoh(page) + " and frame " + itoh(frame) + " .");
@@ -184,17 +184,18 @@ public:
 	}
 
 	_FORCE_INLINE_ Frame &set_last_use(uint32_t in) {
-		//
-		CRASH_COND(dirty)
+		// maybe unnecessary.
+		// CRASH_COND(dirty)
 		ts_last_use = in;
 		return *this;
 	}
 
 	_FORCE_INLINE_ Frame &wait_clean(Semaphore *sem) {
-		while(dirty != false) sem->wait();
+		while (dirty != false)
+			sem->wait();
+		ERR_PRINTS("Page is clean.")
 		return *this;
 	}
-
 
 	_FORCE_INLINE_ uint16_t get_used_size() {
 		return used_size;
@@ -235,11 +236,11 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		DataRead(const Frame *alloc, Semaphore *ready_sem, RWLock *data_lock) :
-				rwl(data_lock),
+		DataRead(const Frame *alloc, DescriptorInfo *desc_info) :
+				rwl(desc_info->lock),
 				mem(alloc->memory_region) {
 			while (!(alloc->ready))
-				ready_sem->wait();
+				desc_info->ready_sem->wait();
 			// WARN_PRINT(("Acquiring data READ lock in thread ID "  + itoh(Thread::get_caller_id()) ).utf8().get_data());
 			acquire();
 		}
@@ -270,12 +271,13 @@ public:
 				rwl(NULL),
 				mem(NULL) {}
 
-		DataWrite(Frame *const p_alloc, Semaphore *dirty_sem, RWLock *data_lock, bool is_io_op) :
-				rwl(data_lock),
+		// We must wait for the page to become clean if we want to write to this page from a file. But, if we're writing from the main thread, we can safely allow this operation to occur.
+		DataWrite(Frame *const p_alloc, DescriptorInfo *desc_info, bool is_io_op) :
+				rwl(desc_info->lock),
 				mem(p_alloc->memory_region) {
 			if (is_io_op)
 				while (p_alloc->dirty)
-					dirty_sem->wait();
+					desc_info->dirty_sem->wait();
 			acquire();
 		}
 
