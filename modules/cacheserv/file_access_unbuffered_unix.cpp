@@ -34,7 +34,7 @@ void FileAccessUnbufferedUnix::check_errors(int val, int expected, int mode) {
 				//ERR_PRINTS("Seeked to EOF.");
 				last_error = ERR_FILE_EOF;
 			} else if (val != expected) {
-				ERR_EXPLAIN("Seeked to " + itoh(val) + " instead of " + itoh(expected));
+				ERR_PRINTS("Seeked to " + itoh(val) + " instead of " + itoh(expected));
 				// CRASH_COND();
 			}
 			return;
