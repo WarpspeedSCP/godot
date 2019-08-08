@@ -135,7 +135,7 @@ private:
 
 	// Expects that the page at the given offset is in the cache.
 	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
-		WARN_PRINTS("Enqueueing load for file " + desc_info->path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
+		// WARN_PRINTS("Enqueueing load for file " + desc_info->path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
 
 		if (offset > desc_info->total_size) {
 			// We can zero fill the current frame and return if the
@@ -143,20 +143,20 @@ private:
 			// prevent accidentally reading old data.
 			// Not sure if this can cause a deadlock yet.
 			// TODO: Investigate possible deadlocks.
-			WARN_PRINTS("Accessed out of bounds, reading zeroes.");
-			memset(Frame::DataWrite(frames[curr_frame], desc_info->sem, desc_info->lock, true).ptr(), 0, CS_PAGE_SIZE);
-			frames[curr_frame]->set_ready_true(desc_info->sem, CS_GET_PAGE(offset), curr_frame);
-			WARN_PRINTS("Finished OOB access.");
+			// WARN_PRINTS("Accessed out of bounds, reading zeroes.");
+			memset(Frame::DataWrite(frames[curr_frame], desc_info, true).ptr(), 0, CS_PAGE_SIZE);
+			frames[curr_frame]->set_ready_true(desc_info->ready_sem, CS_GET_PAGE(offset), curr_frame);
+			// WARN_PRINTS("Finished OOB access.");
 		} else {
 			op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::LOAD));
-			WARN_PRINTS("Enqueue load op for file " + desc_info->path + " at offset " + itoh(offset) + " with frame " + itoh(curr_frame));
+			// WARN_PRINTS("Enqueue load op for file " + desc_info->path + " at offset " + itoh(offset) + " with frame " + itoh(curr_frame));
 		}
 	}
 
 	// Expects that the page at the given offset is in the cache.
 	_FORCE_INLINE_ void enqueue_store(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset) {
 		op_queue.push(CtrlOp(desc_info, curr_frame, offset, CtrlOp::STORE));
-		WARN_PRINTS("Enqueue store op for file " + desc_info->path + " at offset " + itoh(offset) + " with frame " + itoh(curr_frame));
+		// WARN_PRINTS("Enqueue store op for file " + desc_info->path + " at offset " + itoh(offset) + " with frame " + itoh(curr_frame));
 	}
 
 	_FORCE_INLINE_ void enqueue_flush(DescriptorInfo *desc_info) {
@@ -164,7 +164,7 @@ private:
 		MutexLock ml(op_queue.mut);
 		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e;) {
 			if (e->get().di == desc_info && e->get().type == CtrlOp::STORE) {
-				WARN_PRINTS("Deleting store op with offset: " + itoh(e->get().offset) + " frame: " + itoh(e->get().frame) + " file:  " + e->get().di->path)
+				// WARN_PRINTS("Deleting store op with offset: " + itoh(e->get().offset) + " frame: " + itoh(e->get().frame) + " file:  " + e->get().di->path)
 				List<CtrlOp>::Element * next = e->next();
 				e->erase();
 				e = next;
@@ -172,15 +172,15 @@ private:
 		}
 
 		op_queue.priority_push(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH));
-		WARN_PRINTS("Enqueue flush op")
+		// WARN_PRINTS("Enqueue flush op")
 	}
 
 	_FORCE_INLINE_ void enqueue_flush_close(DescriptorInfo *desc_info) {
 		MutexLock ml(op_queue.mut);
-		WARN_PRINTS("Enqueue flush & close op")
+		// WARN_PRINTS("Enqueue flush & close op")
 		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e;) {
 			if (e->get().di == desc_info) {
-				WARN_PRINTS(String("Deleting ") + (e->get().type == CtrlOp::LOAD ? "LOAD" : "STORE") + " op with offset: " + itoh(e->get().offset) + " frame: " + itoh(e->get().frame) + " file:  " + e->get().di->path)
+				// WARN_PRINTS(String("Deleting ") + (e->get().type == CtrlOp::LOAD ? "LOAD" : "STORE") + " op with offset: " + itoh(e->get().offset) + " frame: " + itoh(e->get().frame) + " file:  " + e->get().di->path)
 				List<CtrlOp>::Element *next = e->next();
 				e->erase();
 				e = next;

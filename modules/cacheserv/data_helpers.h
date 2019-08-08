@@ -134,7 +134,7 @@ public:
 		dirty = true;
 		String a;
 		a.parse_utf8((const char *)(this->memory_region), 4095);
-		WARN_PRINTS("Dirty page.\n\n" + a + "\n\n");
+		// WARN_PRINTS("Dirty page.\n\n" + a + "\n\n");
 		return *this;
 	}
 
@@ -142,7 +142,7 @@ public:
 		// A page which is dirty as well as not ready is in an invalid state.
 		CRASH_COND(!ready)
 		dirty = false;
-		WARN_PRINTS("Dirty page " + itoh(frame) + " is clean.");
+		// WARN_PRINTS("Dirty page " + itoh(frame) + " is clean.");
 		dirty_sem->post();
 		return *this;
 	}
@@ -167,7 +167,7 @@ public:
 		CRASH_COND(!ready && dirty)
 		ready = true;
 		ready_sem->post();
-		WARN_PRINTS("Part ready for page " + itoh(page) + " and frame " + itoh(frame) + " .");
+		// WARN_PRINTS("Part ready for page " + itoh(page) + " and frame " + itoh(frame) + " .");
 		return *this;
 	}
 
@@ -175,7 +175,7 @@ public:
 		// A page that is dirty must always be ready.
 		CRASH_COND(dirty)
 		ready = false;
-		WARN_PRINTS("frame " + itoh(frame) + "not ready.");
+		// WARN_PRINTS("frame " + itoh(frame) + "not ready.");
 		return *this;
 	}
 
@@ -193,7 +193,7 @@ public:
 	_FORCE_INLINE_ Frame &wait_clean(Semaphore *sem) {
 		while (dirty != false)
 			sem->wait();
-		ERR_PRINTS("Page is clean.")
+		// ERR_PRINTS("Page is clean.")
 		return *this;
 	}
 

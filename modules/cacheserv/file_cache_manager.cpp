@@ -209,9 +209,11 @@ RID FileCacheManager::add_data_source(RID rid, FileAccess *data_source, int cach
 	files[dd]->valid = true;
 	//WARN_PRINTS(files[dd]->path);
 	const data_descriptor *key = files.next(NULL);
-	for (; key; key = files.next(key)) {
-		printf("\t\t%lx\n", files[*key]);
-	}
+
+	// for (; key; key = files.next(key)) {
+	// 	printf("\t\t%lx\n", files[*key]);
+	// }
+
 	CRASH_COND(files[dd] == NULL);
 	seek(rid, 0, SEEK_SET);
 	check_cache(rid, (cache_policy == _FileCacheManager::KEEP ? CS_KEEP_THRESH_DEFAULT : cache_policy == _FileCacheManager::LRU ? CS_LRU_THRESH_DEFAULT : CS_FIFO_THRESH_DEFAULT) * CS_PAGE_SIZE);
@@ -247,7 +249,7 @@ void FileCacheManager::remove_data_source(RID rid) {
 // of temporary updates to the current offset in the file.
 void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
 	// Get data from data source somehow...
-	ERR_PRINTS("Start load op with file: " + desc_info->path + " page: " + itoh(curr_page) + " frame: " + itoh(curr_frame))
+	//	ERR_PRINTS("Start load op with file: " + desc_info->path + " page: " + itoh(curr_page) + " frame: " + itoh(curr_frame))
 	// Wait until the file is open.
 	if(desc_info->valid != true) {
 		ERR_EXPLAIN("File not open!")
@@ -265,8 +267,7 @@ void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, 
 		check_incomplete_page_load(desc_info, curr_page, curr_frame, offset);
 		//ERR_PRINTS("Read " + itoh(frames[curr_frame]->used_size) + " bytes at end of file.");
 	}
-	ERR_PRINTS("End load op with file: " + desc_info->path + " page: " + itoh(curr_page) + " frame: " + itoh(curr_frame))
-
+	//	ERR_PRINTS("End load op with file: " + desc_info->path + " page: " + itoh(curr_page) + " frame: " + itoh(curr_frame))
 }
 
 // !!! takes mutable references to all params.
@@ -301,7 +302,7 @@ void FileCacheManager::do_flush_op(DescriptorInfo *desc_info) {
 			j += 1;
 		}
 	}
-	ERR_PRINTS("flushed file " + desc_info->path)
+	//ERR_PRINTS("flushed file " + desc_info->path)
 }
 
 void FileCacheManager::do_flush_close_op(DescriptorInfo *desc_info) {
@@ -318,8 +319,8 @@ void FileCacheManager::do_flush_close_op(DescriptorInfo *desc_info) {
 	desc_info->internal_data_source = NULL;
 	desc_info->dirty = false;
 	desc_info->valid = false;
-	desc_info->sem->post();
-	ERR_PRINTS("flushed and closed file " + desc_info->path)
+	desc_info->ready_sem->post();
+	//ERR_PRINTS("flushed and closed file " + desc_info->path)
 }
 
 // !!! takes mutable references to all params.
@@ -342,7 +343,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 		used_size = desc_info->internal_data_source->get_buffer(
 				w.ptr(),
 				CS_PAGE_SIZE);
-		ERR_EXPLAIN("File read returned " + itoh(used_size));
+		//ERR_PRINTS("File read returned " + itoh(used_size));
 
 		// Error has occurred.
 		CRASH_COND(used_size < 0);
@@ -350,7 +351,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 				->set_used_size(used_size)
 				.set_ready_true(desc_info->sem, curr_page, curr_frame);
 	}
-	ERR_PRINTS("Loaded " + itoh(used_size) + " from offset " + itoh(offset) + " with page " + itoh(curr_page) + " mapped to frame " + itoh(curr_frame))
+	//ERR_PRINTS("Loaded " + itoh(used_size) + " from offset " + itoh(offset) + " with page " + itoh(curr_page) + " mapped to frame " + itoh(curr_frame))
 
 	// Assume no error if we get 0 bytes.
 	return (used_size < CS_PAGE_SIZE) && (used_size != 0);
@@ -414,11 +415,11 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 
 		// The end offset of the first page may not be greater than the start offset of the next page.
 		initial_end_offset = MIN(initial_start_offset + read_length, initial_end_offset);
-		WARN_PRINTS("Reading first page with values:\ninitial_start_offset: " + itoh(initial_start_offset) + "\ninitial_end_offset: " + itoh(initial_end_offset) + "\n read size: " + itoh(initial_end_offset - initial_start_offset));
+		//WARN_PRINTS("Reading first page with values:\ninitial_start_offset: " + itoh(initial_start_offset) + "\ninitial_end_offset: " + itoh(initial_end_offset) + "\n read size: " + itoh(initial_end_offset - initial_start_offset));
 
 		{ // Lock the page holder for the operation.
-			WARN_PRINTS("Locking frame " + itoh(curr_frame) + " with page " + itoh(curr_page))
-			Frame::DataRead r(frames[curr_frame], desc_info->sem, desc_info->lock);
+			//WARN_PRINTS("Locking frame " + itoh(curr_frame) + " with page " + itoh(curr_page))
+			Frame::DataRead r(frames[curr_frame], desc_info);
 
 			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info->offset)
 			//  gives us the address of the first byte to copy which may or may not be on a page boundary.
@@ -444,12 +445,12 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 		CRASH_COND((curr_frame = page_frame_map[curr_page]) == CS_MEM_VAL_BAD);
 		// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info->offset) gives us the start
 
-		WARN_PRINTS("Reading intermediate page.\nbuffer_offset: " + itoh(buffer_offset) + "\nread_length: " + itoh(read_length) + "\ncurrent offset: " + itoh(desc_info->offset));
+		//WARN_PRINTS("Reading intermediate page.\nbuffer_offset: " + itoh(buffer_offset) + "\nread_length: " + itoh(read_length) + "\ncurrent offset: " + itoh(desc_info->offset));
 
 		// Lock current frame.
 		{
-			WARN_PRINTS("Locking frame " + itoh(curr_frame) + " with page " + itoh(curr_page))
-			Frame::DataRead r(frames[curr_frame], desc_info->sem, desc_info->lock);
+			//WARN_PRINTS("Locking frame " + itoh(curr_frame) + " with page " + itoh(curr_page))
+			Frame::DataRead r(frames[curr_frame], desc_info);
 			memcpy(
 					(uint8_t *)buffer + buffer_offset,
 					r.ptr(),
@@ -474,8 +475,8 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 		WARN_PRINTS("Reading last page.\nread_length: " + itoh(read_length) + "\ntemp_read_len: " + itoh(temp_read_len));
 
 		{ // Lock last page for reading data.
-			WARN_PRINTS("Locking frame " + itoh(curr_frame) + " with page " + itoh(curr_page))
-			Frame::DataRead r(frames[curr_frame], desc_info->sem, desc_info->lock);
+			// WARN_PRINTS("Locking frame " + itoh(curr_frame) + " with page " + itoh(curr_page))
+			Frame::DataRead r(frames[curr_frame], desc_info);
 
 
 			memcpy(
@@ -684,7 +685,7 @@ size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 		MutexLock ml(op_queue.mut);
 		if (!op_queue.queue.empty()) {
 
-			WARN_PRINT("Acquired client side queue lock.");
+			// WARN_PRINT("Acquired client side queue lock.");
 
 			// Look for load ops with the same file that are farther than a threshold distance away from our effective offset and remove them.
 			for (List<CtrlOp>::Element *i = op_queue.queue.front(); i;) {
@@ -701,7 +702,7 @@ size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 					CtrlOp l = i->get();
 
 					// We can unmap the pages.
-					WARN_PRINTS("Unmapping out of range page " + itoh(CS_GET_PAGE(l.offset)) + " and frame " + itoh(l.frame) + " for file with RID " + itoh(rid.get_id()));
+					// WARN_PRINTS("Unmapping out of range page " + itoh(CS_GET_PAGE(l.offset)) + " and frame " + itoh(l.frame) + " for file with RID " + itoh(rid.get_id()));
 
 					l.di->pages.erase(l.di->guid_prefix | l.offset);
 					// Run the right cache removal policy function.
@@ -888,7 +889,7 @@ void FileCacheManager::rp_lru(DescriptorInfo *desc_info, page_id *curr_page, fra
 		CRASH_NOW()
 	}
 
-	//WARN_PRINTS("evicted page under LRU " + itoh(page_to_evict));
+	// WARN_PRINTS("evicted page under LRU " + itoh(page_to_evict));
 	// get the guid prefix and shift it to lsb to get the RID key.
 	files[(page_to_evict >> 40)]->pages.erase(page_to_evict);
 	page_frame_map.erase(page_to_evict);
@@ -1070,14 +1071,14 @@ void FileCacheManager::rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, fr
 bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offset) {
 
 	page_id curr_page = get_page_guid(desc_info, offset, true);
-	WARN_PRINTS("query for offset " + itoh(offset) + " : " + itoh(curr_page));
+	// WARN_PRINTS("query for offset " + itoh(offset) + " : " + itoh(curr_page));
 	frame_id curr_frame = CS_MEM_VAL_BAD;
 	bool ret;
 
 	if (curr_page == CS_MEM_VAL_BAD) {
 
 		curr_page = get_page_guid(desc_info, offset, false);
-		WARN_PRINTS("Adding page : " + itoh(curr_page));
+		// WARN_PRINTS("Adding page : " + itoh(curr_page));
 
 		// Find a free frame.
 		for (
@@ -1102,7 +1103,7 @@ bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offse
 				CRASH_COND(curr_frame == CS_MEM_VAL_BAD);
 				CRASH_COND(page_frame_map.insert(curr_page, curr_frame) == NULL);
 
-				WARN_PRINTS(itoh(curr_page) + " mapped to " + itoh(curr_frame));
+				// WARN_PRINTS(itoh(curr_page) + " mapped to " + itoh(curr_frame));
 				CS_GET_CACHE_POLICY_FN(
 						cache_insertion_policies,
 						desc_info->cache_policy)
@@ -1113,16 +1114,16 @@ bool FileCacheManager::get_or_do_page_op(DescriptorInfo *desc_info, size_t offse
 
 		// If there are no free frames, we evict an old one according to the paging/caching algo (TODO).
 		if (curr_frame == (data_descriptor)CS_MEM_VAL_BAD) {
-			WARN_PRINT("must evict");
+			// WARN_PRINT("must evict");
 			// Evict other page somehow...
 			// Remove prev page-frame mappings and associated pages.
 
-			WARN_PRINTS("Cache policy: " + String(Dictionary(desc_info->to_variant(*this)).get("cache_policy", "-1")));
+			// WARN_PRINTS("Cache policy: " + String(Dictionary(desc_info->to_variant(*this)).get("cache_policy", "-1")));
 
 			CS_GET_CACHE_POLICY_FN(cache_replacement_policies, desc_info->cache_policy)
 			(desc_info, &curr_page, &curr_frame);
 
-			WARN_PRINTS("curr_page : " + itoh(curr_page) + " mapped to curr_frame: " + itoh(curr_frame));
+			// WARN_PRINTS("curr_page : " + itoh(curr_page) + " mapped to curr_frame: " + itoh(curr_frame));
 		}
 
 		desc_info->pages.ordered_insert(curr_page);
@@ -1181,7 +1182,7 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 	do {
 
-		ERR_PRINTS("Thread" + itoh(fcs.thread->get_id()) + "Waiting for message.");
+		// ERR_PRINTS("Thread" + itoh(fcs.thread->get_id()) + "Waiting for message.");
 		CtrlOp l = fcs.op_queue.pop();
 		//ERR_PRINT("got message");
 		if (l.type == CtrlOp::QUIT)
@@ -1195,22 +1196,22 @@ void FileCacheManager::thread_func(void *p_udata) {
 
 		switch (l.type) {
 			case CtrlOp::LOAD: {
-				ERR_PRINTS("file: " + l.di->path + " Performing load for offset " + itoh(l.offset) + "\nIn pages: " + itoh(CS_GET_PAGE(l.offset)) + "\nCurr page: " + itoh(curr_page) + "\nCurr frame: " + itoh(curr_frame));
+				// ERR_PRINTS("file: " + l.di->path + " Performing load for offset " + itoh(l.offset) + "\nIn pages: " + itoh(CS_GET_PAGE(l.offset)) + "\nCurr page: " + itoh(curr_page) + "\nCurr frame: " + itoh(curr_frame));
 				fcs.do_load_op(l.di, curr_page, curr_frame, l.offset);
 				break;
 			}
 			case CtrlOp::STORE: {
-				ERR_PRINTS("file: " + l.di->path + " Performing store.");
+				// ERR_PRINTS("file: " + l.di->path + " Performing store.");
 				fcs.do_store_op(l.di, curr_page, curr_frame, l.offset);
 				break;
 			}
 			case CtrlOp::FLUSH: {
-				ERR_PRINTS("file: " + l.di->path + " Performing flush store.");
+				// ERR_PRINTS("file: " + l.di->path + " Performing flush store.");
 				fcs.do_flush_op(l.di);
 				break;
 			}
 			case CtrlOp::FLUSH_CLOSE: {
-				ERR_PRINTS("file: " + l.di->path + " Performing flush store and close.")
+				// ERR_PRINTS("file: " + l.di->path + " Performing flush store and close.")
 				fcs.do_flush_close_op(l.di);
 				break;
 			}
@@ -1222,14 +1223,15 @@ void FileCacheManager::thread_func(void *p_udata) {
 void FileCacheManager::check_cache(const RID rid, size_t length) {
 
 	DescriptorInfo *desc_info = files[RID_REF_TO_DD];
-	if(desc_info->path == "out.log")
-		ERR_PRINT("abc");
+
 	if (length == CS_LEN_UNSPECIFIED) length = 8 * CS_PAGE_SIZE;
 
 	for (page_id curr_page = CS_GET_PAGE(desc_info->offset); curr_page < CS_GET_PAGE(desc_info->offset + length) + CS_PAGE_SIZE; curr_page += CS_PAGE_SIZE) {
+		// WARN_PRINTS("Checking cache for file " + desc_info->path + " with offset " + itoh(curr_page));
 
 		if (!get_or_do_page_op(desc_info, curr_page)) {
 			// TODO: reduce inconsistency here.
+			// WARN_PRINTS("get_or_do_page_op result: curr_page: " + itoh(curr_page) + " curr_frame: " + itoh(page_frame_map[desc_info->guid_prefix | curr_page]))
 			enqueue_load(desc_info, page_frame_map[desc_info->guid_prefix | curr_page], curr_page);
 		}
 	}
