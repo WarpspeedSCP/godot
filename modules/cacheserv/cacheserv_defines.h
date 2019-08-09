@@ -32,8 +32,8 @@
 #define CACHESERV_DEFINES_H
 
 #define CS_PAGE_SIZE 0x1000
-#define CS_CACHE_SIZE (uint64_t)(CS_PAGE_SIZE * 16)
-#define CS_MEM_VAL_BAD (uint64_t) ~0
+#define CS_CACHE_SIZE (CS_PAGE_SIZE * 16)
+#define CS_MEM_VAL_BAD ~0
 #define CS_NUM_FRAMES ((CS_CACHE_SIZE) / (CS_PAGE_SIZE))
 #define CS_MIN(a, b) a < b ? a : b
 #define CS_FIFO_THRESH_DEFAULT 8
@@ -58,29 +58,11 @@
 
 #define CS_GET_LENGTH_IN_PAGES(length) (((length) / CS_PAGE_SIZE) + CS_PARTIAL_SIZE(length))
 
-#define ERR_FAIL_COND_MSG_V(m_cond, m_message, m_retval)                                                                                                                           \
-	{                                                                                                                                                                              \
-		if (unlikely(m_cond)) {                                                                                                                                                    \
-			_err_print_error(FUNCTION_STR, __FILE__, __LINE__, ("Condition ' " _STR(m_cond) " ' is true. returned: " _STR(m_retval) ". Message: " + m_message).utf8().get_data()); \
-			return m_retval;                                                                                                                                                       \
-		} else                                                                                                                                                                     \
-			_err_error_exists = false;                                                                                                                                             \
-	}
-
-#define ERR_FAIL_COND_MSG(m_cond, m_message)                                                                                                                        \
-	{                                                                                                                                                               \
-		if (unlikely(m_cond)) {                                                                                                                                     \
-			_err_print_error(FUNCTION_STR, __FILE__, __LINE__, ("Condition ' " _STR(m_cond) " ' is true. returned void. Message: " + m_message).utf8().get_data()); \
-			return;                                                                                                                                                 \
-		} else                                                                                                                                                      \
-			_err_error_exists = false;                                                                                                                              \
-	}
-
-#define ERR_COND_ACTION(m_cond, m_message, m_alt)                                                                                                    \
+#define ERR_COND_ACTION(m_cond, m_message, m_action)                                                                                                    \
 	{                                                                                                                                                \
 		if (unlikely(m_cond)) {                                                                                                                      \
 			_err_print_error(FUNCTION_STR, __FILE__, __LINE__, ("Condition ' " _STR(m_cond) " ' is true. Message: " + m_message).utf8().get_data()); \
-			m_alt                                                                                                                                    \
+			m_action                                                                                                                                    \
 		}                                                                                                                                            \
 	}
 

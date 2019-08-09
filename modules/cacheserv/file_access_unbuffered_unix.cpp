@@ -37,17 +37,15 @@ void FileAccessUnbufferedUnix::check_errors(int val, int expected, int mode) {
 				ERR_PRINTS("Seeked to " + itoh(val) + " instead of " + itoh(expected));
 				// CRASH_COND();
 			}
-			return;
 		case CHK_MODE_WRITE:
 			if (val == -1) {
-				//ERR_PRINTS("Write error with file " + this->path);
+				ERR_PRINTS("Write error with file " + this->path);
 				last_error = ERR_FILE_CANT_WRITE;
 			}
-			// else if(val != expected) {
-			// 	ERR_PRINTS("Wrote " + itoh(val) + " instead of " + itoh(expected) + " bytes from " + this->path);
-			// 	last_error = ERR_FILE_EOF;
-			// }
-			return;
+			else if(val != expected) {
+				ERR_PRINTS("Wrote " + itoh(val) + " instead of " + itoh(expected) + " bytes from " + this->path);
+				last_error = ERR_FILE_EOF;
+			}
 		case CHK_MODE_READ:
 			if(val == -1) {
 				ERR_PRINTS("Read error with file " + this->path);
@@ -56,9 +54,8 @@ void FileAccessUnbufferedUnix::check_errors(int val, int expected, int mode) {
 				ERR_PRINTS("Read " + itoh(val) + " instead of " + itoh(expected) + " bytes from " + this->path);
 				last_error = ERR_FILE_EOF;
 			}
-			return;
 	}
-
+	return;
 }
 
 Error FileAccessUnbufferedUnix::_open(const String &p_path, int p_mode_flags) {
@@ -230,28 +227,17 @@ uint8_t FileAccessUnbufferedUnix::get_8() const {
 
 	CRASH_COND(fd < 0);
 	uint8_t b;
-	if (check_errors(read(fd, &b, 1)) == CS_MEM_VAL_BAD)
+	if (check_errors(read(fd, &b, 1)) < 0)
 		b = '\0';
 	return b;
 }
 
-// int FileAccessUnbufferedUnix::get_buffer(uint8_t *p_dst, int p_length) const {
-
-// 	return get_buffer(p_dst, p_length);
-// };
-
+// Implemented using direct unix read syscall.
 int FileAccessUnbufferedUnix::get_buffer(uint8_t *p_dst, int p_length) const {
 
-	// TODO: fix all.
 	CRASH_COND(fd < 0);
 	return check_errors(read(fd, p_dst, p_length));
 
-
-	// int i = 0;
-	// for (i = 0; i < p_length && !eof_reached(); i++)
-	// 	p_dst[i] = get_8();
-
-	// return i;
 };
 
 Error FileAccessUnbufferedUnix::get_error() const {
@@ -267,7 +253,7 @@ void FileAccessUnbufferedUnix::store_8(uint8_t p_byte) {
 
 void FileAccessUnbufferedUnix::store_buffer(const uint8_t *p_src, int p_length) {
 	CRASH_COND(fd < 0);
-	CRASH_COND((int)write(fd, p_src, p_length) != p_length);
+	CRASH_COND_MSG(write(fd, p_src, p_length) < p_length, "Wrote less than " + itos(p_length) + " bytes");
 }
 
 bool FileAccessUnbufferedUnix::file_exists(const String &p_path) {
@@ -307,8 +293,7 @@ uint64_t FileAccessUnbufferedUnix::_get_modified_time(const String &p_file) {
 	if (!err) {
 		return st.st_mtime;
 	} else {
-		ERR_EXPLAIN("Failed to get modified time for: " + p_file);
-		ERR_FAIL_V(-1);
+		ERR_FAIL_V_MSG(-1, "Failed to get modified time for: " + p_file);
 	};
 }
 

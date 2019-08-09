@@ -48,7 +48,7 @@
 // Int to hex string.
 _FORCE_INLINE_ String itoh(size_t num) {
 	char x[100];
-	snprintf(x, 100, "0x%lx\0", (unsigned long)num);
+	snprintf(x, 100, "0x%lX", (unsigned long)num);
 	return String(x);
 }
 
@@ -63,26 +63,24 @@ struct DescriptorInfo;
 class FileCacheManager;
 
 struct DescriptorInfo {
-	size_t offset;
-	size_t total_size;
-	uint64_t guid_prefix;
-	Vector<page_id> pages;
 	String path;
-	int cache_policy;
-	int max_pages;
+	Vector<page_id> pages;
 	FileAccess *internal_data_source;
 	Semaphore *ready_sem;
 	Semaphore *dirty_sem;
 	RWLock *lock;
+	size_t offset;
+	size_t total_size;
+	uint64_t guid_prefix;
+	int cache_policy;
+	int max_pages;
 	bool valid;
 	bool dirty;
 
 	// Create a new DescriptorInfo with a new random namespace defined by 24 most significant bits.
 	DescriptorInfo(FileAccess *fa, page_id new_guid_prefix, int cache_policy);
 	~DescriptorInfo() {
-		while (dirty)
-			;
-		//sem->wait();
+		while (dirty) dirty_sem->wait();
 		memdelete(ready_sem);
 		memdelete(dirty_sem);
 		memdelete(lock);
@@ -105,21 +103,21 @@ private:
 public:
 	Frame() :
 			memory_region(NULL),
-			used_size(0),
 			ts_last_use(0),
-			used(false),
+			used_size(0),
 			dirty(false),
-			ready(false) {}
+			ready(false),
+			used(false) {}
 
 	explicit Frame(
 			uint8_t *i_memory_region) :
 
 			memory_region(i_memory_region),
-			used_size(0),
 			ts_last_use(0),
-			used(false),
+			used_size(0),
 			dirty(false),
-			ready(false) {}
+			ready(false),
+			used(false) {}
 
 	~Frame() {
 	}

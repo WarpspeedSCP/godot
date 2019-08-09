@@ -32,10 +32,10 @@
 #define FILE_ACCESS_CACHED_H
 
 #include "core/engine.h"
+#include "core/io/marshalls.h"
 #include "core/object.h"
 #include "core/os/file_access.h"
 #include "core/os/semaphore.h"
-#include "core/io/marshalls.h"
 
 #include "file_cache_manager.h"
 
@@ -76,9 +76,9 @@ protected:
 
 		T buf = CS_MEM_VAL_BAD;
 		cache_mgr->check_cache(cached_file, sizeof(T));
-		int o_length = cache_mgr->read(cached_file, &buf, sizeof(T));
+		size_t o_length = cache_mgr->read(cached_file, &buf, sizeof(T));
 		if (o_length < sizeof(T)) {
-			//ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
+			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
 		}
 		return buf;
 	}
@@ -87,11 +87,10 @@ protected:
 	void store_t(T buf) {
 
 		cache_mgr->check_cache(cached_file, sizeof(T));
-		int o_length = cache_mgr->write(cached_file, &buf, sizeof(T));
+		size_t o_length = cache_mgr->write(cached_file, &buf, sizeof(T));
 		if (o_length < sizeof(T)) {
-			//ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
+			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
 		}
-
 	}
 
 	static void _bind_methods() {
@@ -103,6 +102,9 @@ protected:
 	}
 
 public:
+	virtual uint32_t _get_unix_permissions(const String &p_file) { return FileAccess::get_unix_permissions(p_file); }
+	virtual Error _set_unix_permissions(const String &p_file, uint32_t p_permissions) { return FileAccess::set_unix_permissions(p_file, p_permissions); }
+
 	void close() {
 		if (cached_file.is_valid()) {
 			cache_mgr->close(cached_file);
@@ -162,7 +164,6 @@ public:
 		}
 		if (p_length > o_length) {
 			ERR_PRINTS("Read less than " + itoh(p_length) + " bytes.\n");
-
 		}
 		return o_length;
 	} ///< get an array of bytes
@@ -194,18 +195,17 @@ public:
 		}
 	} ///< store an array of bytes
 
+	bool file_exists(const String &p_name) { return cache_mgr->file_exists(p_name); } ///< return true if a file exists
 
-	virtual bool file_exists(const String &p_name) { return cache_mgr->file_exists(p_name); } ///< return true if a file exists
+	uint64_t _get_modified_time(const String &p_file) { return FileAccess::get_modified_time(p_file); }
 
-	virtual uint64_t _get_modified_time(const String &p_file) { return 0; }
+	Error _chmod(const String &p_path, int p_mod) { return ERR_UNAVAILABLE; }
 
-	virtual Error _chmod(const String &p_path, int p_mod) { return ERR_UNAVAILABLE; }
-
-	virtual Error reopen(const String &p_path, int p_mode_flags) { return ERR_UNAVAILABLE; } ///< does not change the AccessType
+	Error reopen(const String &p_path, int p_mode_flags) { return ERR_UNAVAILABLE; } ///< does not change the AccessType
 
 	FileAccessCached() {
 
-		cache_mgr = static_cast<_FileCacheManager *>(Engine::get_singleton()->get_singleton_object("FileCacheManager"))->get_sss();
+		cache_mgr = FileCacheManager::get_singleton();
 		CRASH_COND(!cache_mgr);
 		sem = Semaphore::create();
 		CRASH_COND(!sem);
@@ -262,37 +262,37 @@ protected:
 
 		ClassDB::bind_method(D_METHOD("eof_reached"), &_FileAccessCached::eof_reached);
 		ClassDB::bind_method(D_METHOD("flush"), &_FileAccessCached::flush);
-
 	}
+
 public:
 	_FileAccessCached() {}
 	~_FileAccessCached() {}
 
-	bool eof_reached() {return fac.eof_reached();}
+	bool eof_reached() { return fac.eof_reached(); }
 
 	Variant open(String path, int mode, int cache_policy) {
 
 		if (fac.cached_open(path, mode, cache_policy) == OK) {
 			return this;
 		} else
-			return NULL;
+			return Variant();
 	}
 
-	uint8_t get_8() {return fac.get_8();}
+	uint8_t get_8() { return fac.get_8(); }
 
-	uint16_t get_16() {return fac.get_16();}
+	uint16_t get_16() { return fac.get_16(); }
 
-	uint32_t get_32() {return fac.get_32();}
+	uint32_t get_32() { return fac.get_32(); }
 
-	uint64_t get_64() {return fac.get_64();}
+	uint64_t get_64() { return fac.get_64(); }
 
-	float get_float() {return fac.get_float();}
+	float get_float() { return fac.get_float(); }
 
-	double get_double() {return fac.get_double();}
+	double get_double() { return fac.get_double(); }
 
-	real_t get_real() {return fac.get_real();}
+	real_t get_real() { return fac.get_real(); }
 
-	Vector<String> get_csv_line() {return fac.get_csv_line();}
+	Vector<String> get_csv_line() { return fac.get_csv_line(); }
 
 	PoolByteArray get_buffer(int len) {
 		PoolByteArray pba;
@@ -303,7 +303,7 @@ public:
 
 	void flush() { fac.flush(); }
 
-	String get_line() { return fac.get_line();}
+	String get_line() { return fac.get_line(); }
 
 	void seek(int64_t position) { fac.seek(position); }
 
@@ -315,8 +315,6 @@ public:
 	void store_16(uint16_t value) { fac.store_16(value); }
 	void store_32(uint32_t value) { fac.store_32(value); }
 	void store_64(uint64_t value) { fac.store_64(value); }
-
-
 
 	void store_float(float value) { fac.store_float(value); }
 	void store_double(double value) { fac.store_double(value); }

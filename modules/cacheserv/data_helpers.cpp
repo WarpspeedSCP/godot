@@ -2,10 +2,8 @@
 
 #include "file_cache_manager.h"
 
-#define STRINGIFY2(X) #X
-#define STRINGIFY(X) STRINGIFY2(X)
-
-DescriptorInfo::DescriptorInfo(FileAccess *fa, page_id new_range, int cache_policy) : guid_prefix(new_range), offset(0), valid(true), cache_policy(cache_policy) {
+DescriptorInfo::DescriptorInfo(FileAccess *fa, page_id new_range, int cache_policy) :
+		offset(0), guid_prefix(new_range), cache_policy(cache_policy), valid(true) {
 	ERR_FAIL_COND(!fa);
 	internal_data_source = fa;
 	switch (cache_policy) {

@@ -77,7 +77,7 @@
 // CS_MEM_VAL_BAD if we are making a query and the current page is not tracked.
 _FORCE_INLINE_ page_id get_page_guid(const DescriptorInfo *di, size_t offset, bool query) {
 	page_id x = di->guid_prefix | CS_GET_PAGE(offset);
-	if (query && di->pages.find(x) == CS_MEM_VAL_BAD) {
+	if (query && di->pages.find(x) < 0) {
 		return CS_MEM_VAL_BAD;
 	}
 	return x;
@@ -129,7 +129,7 @@ private:
 	// Returns true if the page at the current offset is already tracked.
 	// Adds the current page to the tracked list, maps it to a frame and returns false if not.
 	// Also sets the values of the given page and frame id args.
-	bool get_or_do_page_op(DescriptorInfo *desc_info, size_t offset);
+	bool get_page_or_do_paging_op(DescriptorInfo *desc_info, size_t offset);
 
 	// Expects that the page at the given offset is in the cache.
 	void enqueue_load(DescriptorInfo *desc_info, frame_id curr_frame, size_t offset);
@@ -268,9 +268,7 @@ public:
 
 	bool file_exists(const String &p_name) const; ///< return true if a file exists
 
-	// uint64_t _get_modified_time(const String &p_file) { return 0; }
-
-	// Error _chmod(const String &p_path, int p_mod) { return ERR_UNAVAILABLE; }
+	Error _chmod(const String &p_path, int p_mod) { return ERR_UNAVAILABLE; }
 
 	void lock();
 	void unlock();
@@ -308,7 +306,7 @@ VARIANT_ENUM_CAST(_FileCacheManager::CachePolicy);
 // A comparator functor to sort page IDs according to the LRU paging algorithm.
 struct LRUComparator {
 	const FileCacheManager *const fcm;
-	
+
 	LRUComparator() :
 			fcm(FileCacheManager::get_singleton()) {}
 

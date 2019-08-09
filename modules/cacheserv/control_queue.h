@@ -48,6 +48,7 @@ private:
 
 		if(sig_quit) return CtrlOp();
 
+		// We only need to lock when accessing the queue.
 		MutexLock ml(mut);
 
 		CtrlOp op = queue.front()->get();

@@ -99,6 +99,9 @@ public:
 
 	virtual Error _chmod(const String &p_path, int p_mod);
 
+	// virtual uint32_t _get_unix_permissions(const String &p_file) {return ;}
+	// virtual Error _set_unix_permissions(const String &p_file, uint32_t p_permissions) {}
+
 	FileAccessUnbufferedUnix();
 	virtual ~FileAccessUnbufferedUnix();
 };
