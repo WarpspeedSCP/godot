@@ -14,12 +14,10 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 	</methods>
 	<members>
-		<member name="steps" type="int" setter="set_steps" getter="get_steps">
+		<member name="steps" type="int" setter="set_steps" getter="get_steps" default="1">
 			The number of steps in the sequence.
 		</member>
 	</members>

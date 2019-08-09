@@ -31,6 +31,7 @@
 #ifndef OS_WINDOWS_H
 #define OS_WINDOWS_H
 
+#include "camera_win.h"
 #include "context_gl_windows.h"
 #include "core/os/input.h"
 #include "core/os/os.h"
@@ -58,6 +59,25 @@
 /**
 	@author Juan Linietsky <reduzio@gmail.com>
 */
+
+typedef struct {
+	BYTE bWidth; // Width, in pixels, of the image
+	BYTE bHeight; // Height, in pixels, of the image
+	BYTE bColorCount; // Number of colors in image (0 if >=8bpp)
+	BYTE bReserved; // Reserved ( must be 0)
+	WORD wPlanes; // Color Planes
+	WORD wBitCount; // Bits per pixel
+	DWORD dwBytesInRes; // How many bytes in this resource?
+	DWORD dwImageOffset; // Where in the file is this image?
+} ICONDIRENTRY, *LPICONDIRENTRY;
+
+typedef struct {
+	WORD idReserved; // Reserved (must be 0)
+	WORD idType; // Resource Type (1 for icons)
+	WORD idCount; // How many images?
+	ICONDIRENTRY idEntries[1]; // An entry for each image (idCount of 'em)
+} ICONDIR, *LPICONDIR;
+
 class JoypadWindows;
 class OS_Windows : public OS {
 
@@ -89,6 +109,7 @@ class OS_Windows : public OS {
 	ContextGL_Windows *gl_context;
 #endif
 	VisualServer *visual_server;
+	CameraWindows *camera_server;
 	int pressrc;
 	HDC hDC; // Private GDI Device Context
 	HINSTANCE hInstance; // Holds The Instance Of The Application
@@ -104,6 +125,9 @@ class OS_Windows : public OS {
 	uint32_t move_timer_id;
 
 	HCURSOR hCursor;
+
+	Size2 min_size;
+	Size2 max_size;
 
 	Size2 window_rect;
 	VideoMode video_mode;
@@ -131,6 +155,7 @@ class OS_Windows : public OS {
 
 	HCURSOR cursors[CURSOR_MAX] = { NULL };
 	CursorShape cursor_shape;
+	Map<CursorShape, Vector<Variant> > cursors_cache;
 
 	InputDefault *input;
 	JoypadWindows *joypad;
@@ -186,6 +211,7 @@ protected:
 	bool maximized;
 	bool minimized;
 	bool borderless;
+	bool console_visible;
 
 public:
 	LRESULT WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -217,6 +243,10 @@ public:
 	virtual void set_window_position(const Point2 &p_position);
 	virtual Size2 get_window_size() const;
 	virtual Size2 get_real_window_size() const;
+	virtual Size2 get_max_window_size() const;
+	virtual Size2 get_min_window_size() const;
+	virtual void set_min_window_size(const Size2 p_size);
+	virtual void set_max_window_size(const Size2 p_size);
 	virtual void set_window_size(const Size2 p_size);
 	virtual void set_window_fullscreen(bool p_enabled);
 	virtual bool is_window_fullscreen() const;
@@ -228,6 +258,8 @@ public:
 	virtual bool is_window_maximized() const;
 	virtual void set_window_always_on_top(bool p_enabled);
 	virtual bool is_window_always_on_top() const;
+	virtual void set_console_visible(bool p_enabled);
+	virtual bool is_console_visible() const;
 	virtual void request_attention();
 
 	virtual void set_borderless_window(bool p_borderless);
@@ -246,7 +278,7 @@ public:
 
 	virtual MainLoop *get_main_loop() const;
 
-	virtual String get_name();
+	virtual String get_name() const;
 
 	virtual Date get_date(bool utc) const;
 	virtual Time get_time(bool utc) const;
@@ -261,7 +293,7 @@ public:
 	virtual void delay_usec(uint32_t p_usec) const;
 	virtual uint64_t get_ticks_usec() const;
 
-	virtual Error execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id = NULL, String *r_pipe = NULL, int *r_exitcode = NULL, bool read_stderr = false);
+	virtual Error execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id = NULL, String *r_pipe = NULL, int *r_exitcode = NULL, bool read_stderr = false, Mutex *p_pipe_mutex = NULL);
 	virtual Error kill(const ProcessID &p_pid);
 	virtual int get_process_id() const;
 
@@ -273,8 +305,11 @@ public:
 	virtual String get_clipboard() const;
 
 	void set_cursor_shape(CursorShape p_shape);
+	CursorShape get_cursor_shape() const;
 	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 	void GetMaskBitmaps(HBITMAP hSourceBitmap, COLORREF clrTransparent, OUT HBITMAP &hAndMaskBitmap, OUT HBITMAP &hXorMaskBitmap);
+
+	void set_native_icon(const String &p_filename);
 	void set_icon(const Ref<Image> &p_icon);
 
 	virtual String get_executable_path() const;

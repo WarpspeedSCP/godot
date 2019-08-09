@@ -209,9 +209,10 @@ public:
 	int get_button_id(int p_column, int p_idx) const;
 	void erase_button(int p_column, int p_idx);
 	int get_button_by_id(int p_column, int p_id) const;
-	bool is_button_disabled(int p_column, int p_idx) const;
 	void set_button(int p_column, int p_idx, const Ref<Texture> &p_button);
 	void set_button_color(int p_column, int p_idx, const Color &p_color);
+	void set_button_disabled(int p_column, int p_idx, bool p_disabled);
+	bool is_button_disabled(int p_column, int p_idx) const;
 
 	/* range works for mode number or mode combo */
 
@@ -238,8 +239,8 @@ public:
 	TreeItem *get_parent();
 	TreeItem *get_children();
 
-	TreeItem *get_prev_visible();
-	TreeItem *get_next_visible();
+	TreeItem *get_prev_visible(bool p_wrap = false);
+	TreeItem *get_next_visible(bool p_wrap = false);
 
 	void remove_child(TreeItem *p_item);
 

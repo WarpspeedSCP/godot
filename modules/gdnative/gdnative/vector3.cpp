@@ -124,6 +124,14 @@ godot_vector3 GDAPI godot_vector3_cubic_interpolate(const godot_vector3 *p_self,
 	return dest;
 }
 
+godot_vector3 GDAPI godot_vector3_move_toward(const godot_vector3 *p_self, const godot_vector3 *p_to, const godot_real p_delta) {
+	godot_vector3 dest;
+	const Vector3 *self = (const Vector3 *)p_self;
+	const Vector3 *to = (const Vector3 *)p_to;
+	*((Vector3 *)&dest) = self->move_toward(*to, p_delta);
+	return dest;
+}
+
 godot_real GDAPI godot_vector3_dot(const godot_vector3 *p_self, const godot_vector3 *p_b) {
 	const Vector3 *self = (const Vector3 *)p_self;
 	const Vector3 *b = (const Vector3 *)p_b;
@@ -171,6 +179,14 @@ godot_vector3 GDAPI godot_vector3_ceil(const godot_vector3 *p_self) {
 	godot_vector3 dest;
 	const Vector3 *self = (const Vector3 *)p_self;
 	*((Vector3 *)&dest) = self->ceil();
+	return dest;
+}
+
+godot_vector3 GDAPI godot_vector3_direction_to(const godot_vector3 *p_self, const godot_vector3 *p_to) {
+	godot_vector3 dest;
+	const Vector3 *self = (const Vector3 *)p_self;
+	const Vector3 *to = (const Vector3 *)p_to;
+	*((Vector3 *)&dest) = self->direction_to(*to);
 	return dest;
 }
 

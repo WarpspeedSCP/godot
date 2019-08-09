@@ -41,13 +41,15 @@
 */
 
 class ARVRInterfaceGDNative : public ARVRInterface {
-	GDCLASS(ARVRInterfaceGDNative, ARVRInterface)
+	GDCLASS(ARVRInterfaceGDNative, ARVRInterface);
 
 	void cleanup();
 
 protected:
 	const godot_arvr_interface_gdnative *interface;
 	void *data;
+
+	static void _bind_methods();
 
 public:
 	/** general interface information **/
@@ -66,6 +68,7 @@ public:
 	/** specific to AR **/
 	virtual bool get_anchor_detection_is_enabled() const;
 	virtual void set_anchor_detection_is_enabled(bool p_enable);
+	virtual int get_camera_feed_id();
 
 	/** rendering and internal **/
 	virtual Size2 get_render_targetsize();
@@ -78,9 +81,11 @@ public:
 	// and a CameraMatrix version to ARVRServer
 	virtual CameraMatrix get_projection_for_eye(ARVRInterface::Eyes p_eye, real_t p_aspect, real_t p_z_near, real_t p_z_far);
 
+	virtual unsigned int get_external_texture_for_eye(ARVRInterface::Eyes p_eye);
 	virtual void commit_for_eye(ARVRInterface::Eyes p_eye, RID p_render_target, const Rect2 &p_screen_rect);
 
 	virtual void process();
+	virtual void notification(int p_what);
 };
 
 #endif // ARVR_INTERFACE_GDNATIVE_H

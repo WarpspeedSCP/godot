@@ -126,6 +126,7 @@ private:
 	StringName tree_changed_name;
 	StringName node_added_name;
 	StringName node_removed_name;
+	StringName node_renamed_name;
 
 	bool use_font_oversampling;
 	int64_t current_frame;
@@ -201,6 +202,7 @@ private:
 	void tree_changed();
 	void node_added(Node *p_node);
 	void node_removed(Node *p_node);
+	void node_renamed(Node *p_node);
 
 	Group *add_to_group(const StringName &p_group, Node *p_node);
 	void remove_from_group(const StringName &p_group, Node *p_node);
@@ -287,7 +289,7 @@ protected:
 
 public:
 	enum {
-		NOTIFICATION_TRANSFORM_CHANGED = 29
+		NOTIFICATION_TRANSFORM_CHANGED = 2000
 	};
 
 	enum GroupCallFlags {
@@ -384,7 +386,7 @@ public:
 	void get_nodes_in_group(const StringName &p_group, List<Node *> *p_list);
 	bool has_group(const StringName &p_identifier) const;
 
-	void set_screen_stretch(StretchMode p_mode, StretchAspect p_aspect, const Size2 p_minsize, real_t p_shrink = 1);
+	void set_screen_stretch(StretchMode p_mode, StretchAspect p_aspect, const Size2 &p_minsize, real_t p_shrink = 1);
 
 	void set_use_font_oversampling(bool p_oversampling);
 	bool is_using_font_oversampling() const;

@@ -90,6 +90,7 @@ private:
 	ToolButton *dir_up;
 
 	ToolButton *refresh;
+	ToolButton *show_hidden;
 
 	Vector<String> filters;
 
@@ -101,6 +102,7 @@ private:
 	bool invalidated;
 
 	void update_dir();
+	void update_file_name();
 	void update_file_list();
 	void update_filters();
 

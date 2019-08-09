@@ -58,6 +58,7 @@
 #include "scene/resources/concave_polygon_shape.h"
 #include "scene/resources/convex_polygon_shape.h"
 #include "scene/resources/cylinder_shape.h"
+#include "scene/resources/height_map_shape.h"
 #include "scene/resources/plane_shape.h"
 #include "scene/resources/primitive_meshes.h"
 #include "scene/resources/ray_shape.h"
@@ -146,7 +147,7 @@ void EditorSpatialGizmo::set_handle(int p_idx, Camera *p_camera, const Point2 &p
 	}
 
 	ERR_FAIL_COND(!gizmo_plugin);
-	return gizmo_plugin->set_handle(this, p_idx, p_camera, p_point);
+	gizmo_plugin->set_handle(this, p_idx, p_camera, p_point);
 }
 
 void EditorSpatialGizmo::commit_handle(int p_idx, const Variant &p_restore, bool p_cancel) {
@@ -157,7 +158,7 @@ void EditorSpatialGizmo::commit_handle(int p_idx, const Variant &p_restore, bool
 	}
 
 	ERR_FAIL_COND(!gizmo_plugin);
-	return gizmo_plugin->commit_handle(this, p_idx, p_restore, p_cancel);
+	gizmo_plugin->commit_handle(this, p_idx, p_restore, p_cancel);
 }
 
 void EditorSpatialGizmo::set_spatial_node(Spatial *p_node) {
@@ -274,15 +275,13 @@ void EditorSpatialGizmo::add_unscaled_billboard(const Ref<Material> &p_material,
 	mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLE_FAN, a);
 	mesh->surface_set_material(0, p_material);
 
-	if (true) {
-		float md = 0;
-		for (int i = 0; i < vs.size(); i++) {
+	float md = 0;
+	for (int i = 0; i < vs.size(); i++) {
 
-			md = MAX(0, vs[i].length());
-		}
-		if (md) {
-			mesh->set_custom_aabb(AABB(Vector3(-md, -md, -md), Vector3(md, md, md) * 2.0));
-		}
+		md = MAX(0, vs[i].length());
+	}
+	if (md) {
+		mesh->set_custom_aabb(AABB(Vector3(-md, -md, -md), Vector3(md, md, md) * 2.0));
 	}
 
 	selectable_icon_size = p_scale;
@@ -324,7 +323,6 @@ void EditorSpatialGizmo::add_handles(const Vector<Vector3> &p_handles, const Ref
 
 	ERR_FAIL_COND(!spatial_node);
 
-	ERR_FAIL_COND(!spatial_node);
 	Instance ins;
 
 	Ref<ArrayMesh> mesh = memnew(ArrayMesh);
@@ -432,9 +430,7 @@ bool EditorSpatialGizmo::intersect_frustum(const Camera *p_camera, const Vector<
 			}
 		}
 
-		if (!any_out)
-			return true;
-		return false;
+		return !any_out;
 	}
 
 	if (collision_segments.size()) {
@@ -572,9 +568,11 @@ bool EditorSpatialGizmo::intersect_ray(Camera *p_camera, const Point2 &p_point, 
 
 		Transform orig_camera_transform = p_camera->get_camera_transform();
 
-		if (orig_camera_transform.origin.distance_squared_to(t.origin) > 0.01) {
+		if (orig_camera_transform.origin.distance_squared_to(t.origin) > 0.01 &&
+				ABS(orig_camera_transform.basis.get_axis(Vector3::AXIS_Z).dot(Vector3(0, 1, 0))) < 0.99) {
 			p_camera->look_at(t.origin, Vector3(0, 1, 0));
 		}
+
 		Vector3 c0 = t.xform(Vector3(selectable_icon_size, selectable_icon_size, 0) * scale);
 		Vector3 c1 = t.xform(Vector3(-selectable_icon_size, -selectable_icon_size, 0) * scale);
 
@@ -583,7 +581,7 @@ bool EditorSpatialGizmo::intersect_ray(Camera *p_camera, const Point2 &p_point, 
 
 		p_camera->set_global_transform(orig_camera_transform);
 
-		Rect2 rect(p0, p1 - p0);
+		Rect2 rect(p0, (p1 - p0).abs());
 
 		rect.set_position(center - rect.get_size() / 2.0);
 
@@ -875,6 +873,10 @@ void LightSpatialGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_idx,
 			Geometry::get_closest_points_between_segments(Vector3(), Vector3(0, 0, -4096), s[0], s[1], ra, rb);
 
 			float d = -ra.z;
+			if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+				d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+			}
+
 			if (d < 0)
 				d = 0;
 
@@ -887,6 +889,10 @@ void LightSpatialGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_idx,
 			if (cp.intersects_ray(ray_from, ray_dir, &inters)) {
 
 				float r = inters.distance_to(gt.origin);
+				if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+					r = Math::stepify(r, SpatialEditor::get_singleton()->get_translate_snap());
+				}
+
 				light->set_param(Light::PARAM_RANGE, r);
 			}
 		}
@@ -1259,6 +1265,10 @@ void CameraSpatialGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_idx
 		Vector3 ra, rb;
 		Geometry::get_closest_points_between_segments(Vector3(0, 0, -1), Vector3(4096, 0, -1), s[0], s[1], ra, rb);
 		float d = ra.x * 2.0;
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
+
 		if (d < 0)
 			d = 0;
 
@@ -1310,6 +1320,28 @@ void CameraSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 	Ref<Material> material = get_material("camera_material", p_gizmo);
 	Ref<Material> icon = get_material("camera_icon", p_gizmo);
 
+#define ADD_TRIANGLE(m_a, m_b, m_c) \
+	{                               \
+		lines.push_back(m_a);       \
+		lines.push_back(m_b);       \
+		lines.push_back(m_b);       \
+		lines.push_back(m_c);       \
+		lines.push_back(m_c);       \
+		lines.push_back(m_a);       \
+	}
+
+#define ADD_QUAD(m_a, m_b, m_c, m_d) \
+	{                                \
+		lines.push_back(m_a);        \
+		lines.push_back(m_b);        \
+		lines.push_back(m_b);        \
+		lines.push_back(m_c);        \
+		lines.push_back(m_c);        \
+		lines.push_back(m_d);        \
+		lines.push_back(m_d);        \
+		lines.push_back(m_a);        \
+	}
+
 	switch (camera->get_projection()) {
 
 		case Camera::PROJECTION_PERSPECTIVE: {
@@ -1321,16 +1353,6 @@ void CameraSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 			Vector3 nside = side;
 			nside.x = -nside.x;
 			Vector3 up = Vector3(0, side.x, 0);
-
-#define ADD_TRIANGLE(m_a, m_b, m_c) \
-	{                               \
-		lines.push_back(m_a);       \
-		lines.push_back(m_b);       \
-		lines.push_back(m_b);       \
-		lines.push_back(m_c);       \
-		lines.push_back(m_c);       \
-		lines.push_back(m_a);       \
-	}
 
 			ADD_TRIANGLE(Vector3(), side + up, side - up);
 			ADD_TRIANGLE(Vector3(), nside + up, nside - up);
@@ -1346,17 +1368,6 @@ void CameraSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 		} break;
 		case Camera::PROJECTION_ORTHOGONAL: {
 
-#define ADD_QUAD(m_a, m_b, m_c, m_d) \
-	{                                \
-		lines.push_back(m_a);        \
-		lines.push_back(m_b);        \
-		lines.push_back(m_b);        \
-		lines.push_back(m_c);        \
-		lines.push_back(m_c);        \
-		lines.push_back(m_d);        \
-		lines.push_back(m_d);        \
-		lines.push_back(m_a);        \
-	}
 			float size = camera->get_size();
 
 			float hsize = size * 0.5;
@@ -1369,6 +1380,7 @@ void CameraSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 			ADD_QUAD(-up - right + back, -up + right + back, up + right + back, up - right + back);
 			ADD_QUAD(up + right, up + right + back, up - right + back, up - right);
 			ADD_QUAD(-up + right, -up + right + back, -up - right + back, -up - right);
+
 			handles.push_back(right + back);
 
 			right.x *= 0.25;
@@ -1376,7 +1388,29 @@ void CameraSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 			ADD_TRIANGLE(tup, right + up + back, -right + up + back);
 
 		} break;
+		case Camera::PROJECTION_FRUSTUM: {
+			float hsize = camera->get_size() / 2.0;
+
+			Vector3 side = Vector3(hsize, 0, -camera->get_znear()).normalized();
+			Vector3 nside = side;
+			nside.x = -nside.x;
+			Vector3 up = Vector3(0, side.x, 0);
+			Vector3 offset = Vector3(camera->get_frustum_offset().x, camera->get_frustum_offset().y, 0.0);
+
+			ADD_TRIANGLE(Vector3(), side + up + offset, side - up + offset);
+			ADD_TRIANGLE(Vector3(), nside + up + offset, nside - up + offset);
+			ADD_TRIANGLE(Vector3(), side + up + offset, nside + up + offset);
+			ADD_TRIANGLE(Vector3(), side - up + offset, nside - up + offset);
+
+			side.x *= 0.25;
+			nside.x *= 0.25;
+			Vector3 tup(0, up.y * 3 / 2, side.z);
+			ADD_TRIANGLE(tup + offset, side + up + offset, nside + up + offset);
+		}
 	}
+
+#undef ADD_TRIANGLE
+#undef ADD_QUAD
 
 	p_gizmo->add_lines(lines, material);
 	p_gizmo->add_unscaled_billboard(icon, 0.05);
@@ -1809,12 +1843,12 @@ void PhysicalBoneSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 			JointSpatialGizmoPlugin::CreateConeTwistJointGizmo(
 					physical_bone->get_joint_offset(),
 					physical_bone->get_global_transform() * physical_bone->get_joint_offset(),
-					pb ? pb->get_global_transform() : Transform(),
-					pbp ? pbp->get_global_transform() : Transform(),
+					pb->get_global_transform(),
+					pbp->get_global_transform(),
 					cjd->swing_span,
 					cjd->twist_span,
-					pb ? &points : NULL,
-					pbp ? &points : NULL);
+					&points,
+					&points);
 		} break;
 		case PhysicalBone::JOINT_TYPE_HINGE: {
 
@@ -1822,14 +1856,14 @@ void PhysicalBoneSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 			JointSpatialGizmoPlugin::CreateHingeJointGizmo(
 					physical_bone->get_joint_offset(),
 					physical_bone->get_global_transform() * physical_bone->get_joint_offset(),
-					pb ? pb->get_global_transform() : Transform(),
-					pbp ? pbp->get_global_transform() : Transform(),
+					pb->get_global_transform(),
+					pbp->get_global_transform(),
 					hjd->angular_limit_lower,
 					hjd->angular_limit_upper,
 					hjd->angular_limit_enabled,
 					points,
-					pb ? &points : NULL,
-					pbp ? &points : NULL);
+					&points,
+					&points);
 		} break;
 		case PhysicalBone::JOINT_TYPE_SLIDER: {
 
@@ -1837,15 +1871,15 @@ void PhysicalBoneSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 			JointSpatialGizmoPlugin::CreateSliderJointGizmo(
 					physical_bone->get_joint_offset(),
 					physical_bone->get_global_transform() * physical_bone->get_joint_offset(),
-					pb ? pb->get_global_transform() : Transform(),
-					pbp ? pbp->get_global_transform() : Transform(),
+					pb->get_global_transform(),
+					pbp->get_global_transform(),
 					sjd->angular_limit_lower,
 					sjd->angular_limit_upper,
 					sjd->linear_limit_lower,
 					sjd->linear_limit_upper,
 					points,
-					pb ? &points : NULL,
-					pbp ? &points : NULL);
+					&points,
+					&points);
 		} break;
 		case PhysicalBone::JOINT_TYPE_6DOF: {
 
@@ -1854,8 +1888,8 @@ void PhysicalBoneSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 					physical_bone->get_joint_offset(),
 
 					physical_bone->get_global_transform() * physical_bone->get_joint_offset(),
-					pb ? pb->get_global_transform() : Transform(),
-					pbp ? pbp->get_global_transform() : Transform(),
+					pb->get_global_transform(),
+					pbp->get_global_transform(),
 
 					sdofjd->axis_data[0].angular_limit_lower,
 					sdofjd->axis_data[0].angular_limit_upper,
@@ -1879,8 +1913,8 @@ void PhysicalBoneSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 					sdofjd->axis_data[2].linear_limit_enabled,
 
 					points,
-					pb ? &points : NULL,
-					pbp ? &points : NULL);
+					&points,
+					&points);
 		} break;
 		default:
 			return;
@@ -2288,6 +2322,9 @@ void VisibilityNotifierGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int 
 		Geometry::get_closest_points_between_segments(ofs - axis * 4096, ofs + axis * 4096, sg[0], sg[1], ra, rb);
 
 		float d = ra[p_idx];
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
 
 		aabb.position[p_idx] = d - 1.0 - aabb.size[p_idx] * 0.5;
 		notifier->set_aabb(aabb);
@@ -2297,6 +2334,10 @@ void VisibilityNotifierGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int 
 		Geometry::get_closest_points_between_segments(ofs, ofs + axis * 4096, sg[0], sg[1], ra, rb);
 
 		float d = ra[p_idx] - ofs[p_idx];
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
+
 		if (d < 0.001)
 			d = 0.001;
 		//resize
@@ -2422,7 +2463,6 @@ void ParticlesGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_idx, Ca
 	Particles *particles = Object::cast_to<Particles>(p_gizmo->get_spatial_node());
 
 	Transform gt = particles->get_global_transform();
-	//gt.orthonormalize();
 	Transform gi = gt.affine_inverse();
 
 	bool move = p_idx >= 3;
@@ -2445,6 +2485,9 @@ void ParticlesGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_idx, Ca
 		Geometry::get_closest_points_between_segments(ofs - axis * 4096, ofs + axis * 4096, sg[0], sg[1], ra, rb);
 
 		float d = ra[p_idx];
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
 
 		aabb.position[p_idx] = d - 1.0 - aabb.size[p_idx] * 0.5;
 		particles->set_visibility_aabb(aabb);
@@ -2454,6 +2497,10 @@ void ParticlesGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_idx, Ca
 		Geometry::get_closest_points_between_segments(ofs, ofs + axis * 4096, sg[0], sg[1], ra, rb);
 
 		float d = ra[p_idx] - ofs[p_idx];
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
+
 		if (d < 0.001)
 			d = 0.001;
 		//resize
@@ -2597,6 +2644,10 @@ void ReflectionProbeGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_i
 		Vector3 ra, rb;
 		Geometry::get_closest_points_between_segments(Vector3(), axis * 16384, sg[0], sg[1], ra, rb);
 		float d = ra[p_idx];
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
+
 		if (d < 0.001)
 			d = 0.001;
 
@@ -2619,8 +2670,11 @@ void ReflectionProbeGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_i
 
 		Vector3 ra, rb;
 		Geometry::get_closest_points_between_segments(origin - axis * 16384, origin + axis * 16384, sg[0], sg[1], ra, rb);
-		float d = ra[p_idx];
-		d += 0.25;
+		// Adjust the actual position to account for the gizmo handle position
+		float d = ra[p_idx] + 0.25;
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
 
 		origin[p_idx] = d;
 		probe->set_origin_offset(origin);
@@ -2758,7 +2812,6 @@ void GIProbeGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_idx, Came
 	GIProbe *probe = Object::cast_to<GIProbe>(p_gizmo->get_spatial_node());
 
 	Transform gt = probe->get_global_transform();
-	//gt.orthonormalize();
 	Transform gi = gt.affine_inverse();
 
 	Vector3 extents = probe->get_extents();
@@ -2774,6 +2827,10 @@ void GIProbeGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int p_idx, Came
 	Vector3 ra, rb;
 	Geometry::get_closest_points_between_segments(Vector3(), axis * 16384, sg[0], sg[1], ra, rb);
 	float d = ra[p_idx];
+	if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+		d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+	}
+
 	if (d < 0.001)
 		d = 0.001;
 
@@ -2923,7 +2980,6 @@ void BakedIndirectLightGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int 
 	BakedLightmap *baker = Object::cast_to<BakedLightmap>(p_gizmo->get_spatial_node());
 
 	Transform gt = baker->get_global_transform();
-	//gt.orthonormalize();
 	Transform gi = gt.affine_inverse();
 
 	Vector3 extents = baker->get_extents();
@@ -2939,6 +2995,10 @@ void BakedIndirectLightGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, int 
 	Vector3 ra, rb;
 	Geometry::get_closest_points_between_segments(Vector3(), axis * 16384, sg[0], sg[1], ra, rb);
 	float d = ra[p_idx];
+	if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+		d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+	}
+
 	if (d < 0.001)
 		d = 0.001;
 
@@ -3136,6 +3196,10 @@ void CollisionShapeSpatialGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, i
 		Vector3 ra, rb;
 		Geometry::get_closest_points_between_segments(Vector3(), Vector3(4096, 0, 0), sg[0], sg[1], ra, rb);
 		float d = ra.x;
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
+
 		if (d < 0.001)
 			d = 0.001;
 
@@ -3148,6 +3212,10 @@ void CollisionShapeSpatialGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, i
 		Vector3 ra, rb;
 		Geometry::get_closest_points_between_segments(Vector3(), Vector3(0, 0, 4096), sg[0], sg[1], ra, rb);
 		float d = ra.z;
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
+
 		if (d < 0.001)
 			d = 0.001;
 
@@ -3162,6 +3230,10 @@ void CollisionShapeSpatialGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, i
 		Vector3 ra, rb;
 		Geometry::get_closest_points_between_segments(Vector3(), axis * 4096, sg[0], sg[1], ra, rb);
 		float d = ra[p_idx];
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
+
 		if (d < 0.001)
 			d = 0.001;
 
@@ -3180,6 +3252,11 @@ void CollisionShapeSpatialGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, i
 		float d = axis.dot(ra);
 		if (p_idx == 1)
 			d -= cs2->get_radius();
+
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
+
 		if (d < 0.001)
 			d = 0.001;
 
@@ -3197,6 +3274,9 @@ void CollisionShapeSpatialGizmoPlugin::set_handle(EditorSpatialGizmo *p_gizmo, i
 		Vector3 ra, rb;
 		Geometry::get_closest_points_between_segments(Vector3(), axis * 4096, sg[0], sg[1], ra, rb);
 		float d = axis.dot(ra);
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			d = Math::stepify(d, SpatialEditor::get_singleton()->get_translate_snap());
+		}
 
 		if (d < 0.001)
 			d = 0.001;
@@ -3611,6 +3691,14 @@ void CollisionShapeSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 		Vector<Vector3> handles;
 		handles.push_back(Vector3(0, 0, rs->get_length()));
 		p_gizmo->add_handles(handles, handles_material);
+	}
+
+	if (Object::cast_to<HeightMapShape>(*s)) {
+
+		Ref<HeightMapShape> hms = s;
+
+		Ref<ArrayMesh> mesh = hms->get_debug_mesh();
+		p_gizmo->add_mesh(mesh, false, RID(), material);
 	}
 }
 

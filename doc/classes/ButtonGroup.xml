@@ -9,14 +9,12 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 		<method name="get_buttons">
 			<return type="Array">
 			</return>
 			<description>
-				Returns an [Array] of [Button]s who have this as their [code]ButtonGroup[/code] (see [member BaseButton.group]).
+				Returns an [Array] of [Button]s who have this as their [ButtonGroup] (see [member BaseButton.group]).
 			</description>
 		</method>
 		<method name="get_pressed_button">

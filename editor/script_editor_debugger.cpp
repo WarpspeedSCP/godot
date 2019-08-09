@@ -209,8 +209,8 @@ void ScriptEditorDebugger::debug_next() {
 	Array msg;
 	msg.push_back("next");
 	ppeer->put_var(msg);
+	_clear_execution();
 	stack_dump->clear();
-	inspector->edit(NULL);
 }
 void ScriptEditorDebugger::debug_step() {
 
@@ -221,8 +221,8 @@ void ScriptEditorDebugger::debug_step() {
 	Array msg;
 	msg.push_back("step");
 	ppeer->put_var(msg);
+	_clear_execution();
 	stack_dump->clear();
-	inspector->edit(NULL);
 }
 
 void ScriptEditorDebugger::debug_break() {
@@ -245,6 +245,7 @@ void ScriptEditorDebugger::debug_continue() {
 	OS::get_singleton()->enable_for_stealing_focus(EditorNode::get_singleton()->get_child_process_id());
 
 	Array msg;
+	_clear_execution();
 	msg.push_back("continue");
 	ppeer->put_var(msg);
 }
@@ -261,7 +262,7 @@ void ScriptEditorDebugger::_scene_tree_folded(Object *obj) {
 		return;
 
 	ObjectID id = item->get_metadata(0);
-	if (item->is_collapsed()) {
+	if (unfold_cache.has(id)) {
 		unfold_cache.erase(id);
 	} else {
 		unfold_cache.insert(id);
@@ -298,17 +299,57 @@ void ScriptEditorDebugger::_scene_tree_rmb_selected(const Vector2 &p_position) {
 
 	item_menu->clear();
 	item_menu->add_icon_item(get_icon("CreateNewSceneFrom", "EditorIcons"), TTR("Save Branch as Scene"), ITEM_MENU_SAVE_REMOTE_NODE);
+	item_menu->add_icon_item(get_icon("CopyNodePath", "EditorIcons"), TTR("Copy Node Path"), ITEM_MENU_COPY_NODE_PATH);
 	item_menu->set_global_position(get_global_mouse_position());
 	item_menu->popup();
 }
 
 void ScriptEditorDebugger::_file_selected(const String &p_file) {
-	if (file_dialog->get_mode() == EditorFileDialog::MODE_SAVE_FILE) {
-		Array msg;
-		msg.push_back("save_node");
-		msg.push_back(inspected_object_id);
-		msg.push_back(p_file);
-		ppeer->put_var(msg);
+	switch (file_dialog_mode) {
+		case SAVE_NODE: {
+			Array msg;
+			msg.push_back("save_node");
+			msg.push_back(inspected_object_id);
+			msg.push_back(p_file);
+			ppeer->put_var(msg);
+		} break;
+		case SAVE_CSV: {
+			Error err;
+			FileAccessRef file = FileAccess::open(p_file, FileAccess::WRITE, &err);
+
+			if (err != OK) {
+				ERR_PRINTS("Failed to open " + p_file);
+				return;
+			}
+			Vector<String> line;
+			line.resize(Performance::MONITOR_MAX);
+
+			// signatures
+			for (int i = 0; i < Performance::MONITOR_MAX; i++) {
+				line.write[i] = Performance::get_singleton()->get_monitor_name(Performance::Monitor(i));
+			}
+			file->store_csv_line(line);
+
+			// values
+			List<Vector<float> >::Element *E = perf_history.back();
+			while (E) {
+
+				Vector<float> &perf_data = E->get();
+				for (int i = 0; i < perf_data.size(); i++) {
+
+					line.write[i] = String::num_real(perf_data[i]);
+				}
+				file->store_csv_line(line);
+				E = E->prev();
+			}
+			file->store_string("\n");
+
+			Vector<Vector<String> > profiler_data = profiler->get_data_as_csv();
+			for (int i = 0; i < profiler_data.size(); i++) {
+				file->store_csv_line(profiler_data[i]);
+			}
+
+		} break;
 	}
 }
 
@@ -342,6 +383,74 @@ void ScriptEditorDebugger::_scene_tree_request() {
 	ppeer->put_var(msg);
 }
 
+/// Populates inspect_scene_tree recursively given data in nodes.
+/// Nodes is an array containing 4 elements for each node, it follows this pattern:
+/// nodes[i] == number of direct children of this node
+/// nodes[i + 1] == node name
+/// nodes[i + 2] == node class
+/// nodes[i + 3] == node instance id
+///
+/// Returns the number of items parsed in nodes from current_index.
+///
+/// Given a nodes array like [R,A,B,C,D,E] the following Tree will be generated, assuming
+/// filter is an empty String, R and A child count are 2, B is 1 and C, D and E are 0.
+///
+/// R
+/// |-A
+/// | |-B
+/// | | |-C
+/// | |
+/// | |-D
+/// |
+/// |-E
+///
+int ScriptEditorDebugger::_update_scene_tree(TreeItem *parent, const Array &nodes, int current_index) {
+	String filter = EditorNode::get_singleton()->get_scene_tree_dock()->get_filter();
+	String item_text = nodes[current_index + 1];
+	bool keep = filter.is_subsequence_ofi(item_text);
+
+	TreeItem *item = inspect_scene_tree->create_item(parent);
+	item->set_text(0, item_text);
+	ObjectID id = ObjectID(nodes[current_index + 3]);
+	Ref<Texture> icon = EditorNode::get_singleton()->get_class_icon(nodes[current_index + 2], "");
+	if (icon.is_valid()) {
+		item->set_icon(0, icon);
+	}
+	item->set_metadata(0, id);
+
+	// Set current item as collapsed if necessary
+	if (parent) {
+		if (!unfold_cache.has(id)) {
+			item->set_collapsed(true);
+		}
+	}
+
+	int children_count = nodes[current_index];
+	// Tracks the total number of items parsed in nodes, this is used to skips nodes that
+	// are not direct children of the current node since we can't know in advance the total
+	// number of children, direct and not, of a node without traversing the nodes array previously.
+	// Keeping track of this allows us to build our remote scene tree by traversing the node
+	// array just once.
+	int items_count = 1;
+	for (int i = 0; i < children_count; i++) {
+		// Called for each direct child of item.
+		// Direct children of current item might not be adjacent so items_count must
+		// be incremented by the number of items parsed until now, otherwise we would not
+		// be able to access the next child of the current item.
+		// items_count is multiplied by 4 since that's the number of elements in the nodes
+		// array needed to represent a single node.
+		items_count += _update_scene_tree(item, nodes, current_index + items_count * 4);
+	}
+
+	// If item has not children and should not be kept delete it
+	if (!keep && !item->get_children() && parent) {
+		parent->remove_child(item);
+		memdelete(item);
+	}
+
+	return items_count;
+}
+
 void ScriptEditorDebugger::_video_mem_request() {
 
 	ERR_FAIL_COND(connection.is_null());
@@ -358,6 +467,7 @@ Size2 ScriptEditorDebugger::get_minimum_size() const {
 	ms.y = MAX(ms.y, 250 * EDSCALE);
 	return ms;
 }
+
 void ScriptEditorDebugger::_parse_message(const String &p_msg, const Array &p_data) {
 
 	if (p_msg == "debug_enter") {
@@ -387,6 +497,7 @@ void ScriptEditorDebugger::_parse_message(const String &p_msg, const Array &p_da
 	} else if (p_msg == "debug_exit") {
 
 		breaked = false;
+		_clear_execution();
 		copy->set_disabled(true);
 		step->set_disabled(true);
 		next->set_disabled(true);
@@ -399,7 +510,6 @@ void ScriptEditorDebugger::_parse_message(const String &p_msg, const Array &p_da
 		emit_signal("breaked", false, false, Variant());
 		profiler->set_enabled(true);
 		profiler->disable_seeking();
-		inspector->edit(NULL);
 		EditorNode::get_singleton()->get_pause_button()->set_pressed(false);
 	} else if (p_msg == "message:click_ctrl") {
 
@@ -413,48 +523,8 @@ void ScriptEditorDebugger::_parse_message(const String &p_msg, const Array &p_da
 
 		updating_scene_tree = true;
 
-		for (int i = 0; i < p_data.size(); i += 4) {
+		_update_scene_tree(NULL, p_data, 0);
 
-			TreeItem *p;
-			int level = p_data[i];
-			if (level == 0) {
-				p = NULL;
-			} else {
-				ERR_CONTINUE(!lv.has(level - 1));
-				p = lv[level - 1];
-			}
-
-			TreeItem *it = inspect_scene_tree->create_item(p);
-
-			ObjectID id = ObjectID(p_data[i + 3]);
-
-			it->set_text(0, p_data[i + 1]);
-			Ref<Texture> icon = EditorNode::get_singleton()->get_class_icon(p_data[i + 2], "");
-			if (icon.is_valid())
-				it->set_icon(0, icon);
-			it->set_metadata(0, id);
-
-			if (id == inspected_object_id) {
-				TreeItem *cti = it->get_parent(); //ensure selected is always uncollapsed
-				while (cti) {
-					cti->set_collapsed(false);
-					cti = cti->get_parent();
-				}
-				it->select(0);
-			}
-
-			if (p) {
-				if (!unfold_cache.has(id)) {
-					it->set_collapsed(true);
-				}
-			} else {
-				if (unfold_cache.has(id)) { //reverse for root
-					it->set_collapsed(true);
-				}
-			}
-
-			lv[level] = it;
-		}
 		updating_scene_tree = false;
 
 		le_clear->set_disabled(false);
@@ -584,8 +654,7 @@ void ScriptEditorDebugger::_parse_message(const String &p_msg, const Array &p_da
 			d["frame"] = i;
 			s->set_metadata(0, d);
 
-			//String line = itos(i)+" - "+String(d["file"])+":"+itos(d["line"])+" - at func: "+d["function"];
-			String line = itos(i) + " - " + String(d["file"]) + ":" + itos(d["line"]);
+			String line = itos(i) + " - " + String(d["file"]) + ":" + itos(d["line"]) + " - at function: " + d["function"];
 			s->set_text(0, line);
 
 			if (i == 0)
@@ -687,20 +756,8 @@ void ScriptEditorDebugger::_parse_message(const String &p_msg, const Array &p_da
 				String tt = vs;
 				switch (Performance::MonitorType((int)perf_items[i]->get_metadata(1))) {
 					case Performance::MONITOR_TYPE_MEMORY: {
-						// for the time being, going above GBs is a bad sign.
-						String unit = "B";
-						if ((int)v > 1073741824) {
-							unit = "GB";
-							v /= 1073741824.0;
-						} else if ((int)v > 1048576) {
-							unit = "MB";
-							v /= 1048576.0;
-						} else if ((int)v > 1024) {
-							unit = "KB";
-							v /= 1024.0;
-						}
-						tt += " bytes";
-						vs = String::num(v, 2) + " " + unit;
+						vs = String::humanize_size(v);
+						tt = vs;
 					} break;
 					case Performance::MONITOR_TYPE_TIME: {
 						tt += " seconds";
@@ -959,7 +1016,10 @@ void ScriptEditorDebugger::_performance_draw() {
 	Ref<Font> graph_font = get_font("font", "TextEdit");
 
 	if (which.empty()) {
-		perf_draw->draw_string(graph_font, Point2(0, graph_font->get_ascent()), TTR("Pick one or more items from the list to display the graph."), get_color("font_color", "Label"), perf_draw->get_size().x);
+		String text = TTR("Pick one or more items from the list to display the graph.");
+
+		perf_draw->draw_string(graph_font, Point2i(MAX(0, perf_draw->get_size().x - graph_font->get_string_size(text).x), perf_draw->get_size().y + graph_font->get_ascent()) / 2, text, get_color("font_color", "Label"), perf_draw->get_size().x);
+
 		return;
 	}
 
@@ -985,7 +1045,9 @@ void ScriptEditorDebugger::_performance_draw() {
 		int pi = which[i];
 		Color c = get_color("accent_color", "Editor");
 		float h = (float)which[i] / (float)(perf_items.size());
-		c.set_hsv(Math::fmod(h + 0.4, 0.9), c.get_s() * 0.9, c.get_v() * 1.4);
+		// Use a darker color on light backgrounds for better visibility
+		float value_multiplier = EditorSettings::get_singleton()->is_dark_theme() ? 1.4 : 0.55;
+		c.set_hsv(Math::fmod(h + 0.4, 0.9), c.get_s() * 0.9, c.get_v() * value_multiplier);
 
 		c.a = 0.6;
 		perf_draw->draw_string(graph_font, r.position + Point2(0, graph_font->get_ascent()), perf_items[pi]->get_text(0), c, r.size.x);
@@ -1005,9 +1067,8 @@ void ScriptEditorDebugger::_performance_draw() {
 			float h2 = E->get()[pi] / m;
 			h2 = (1.0 - h2) * r.size.y;
 
-			c.a = 0.7;
 			if (E != perf_history.front())
-				perf_draw->draw_line(r.position + Point2(from, h2), r.position + Point2(from + spacing, prev), c, 2.0);
+				perf_draw->draw_line(r.position + Point2(from, h2), r.position + Point2(from + spacing, prev), c, Math::round(EDSCALE), true);
 			prev = h2;
 			E = E->next();
 			from -= spacing;
@@ -1092,10 +1153,13 @@ void ScriptEditorDebugger::_notification(int p_what) {
 				last_warning_count = warning_count;
 			}
 
-			if (connection.is_null()) {
-
-				if (server->is_connection_available()) {
-
+			if (server->is_connection_available()) {
+				if (connection.is_valid()) {
+					// We already have a valid connection. Disconnecting any new connecting client to prevent it from hanging.
+					// (If we don't keep a reference to the connection it will be destroyed and disconnect_from_host will be called internally)
+					server->take_connection();
+				} else {
+					// We just got the first connection.
 					connection = server->take_connection();
 					if (connection.is_null())
 						break;
@@ -1129,12 +1193,11 @@ void ScriptEditorDebugger::_notification(int p_what) {
 					if (profiler->is_profiling()) {
 						_profiler_activate(true);
 					}
-
-				} else {
-
-					break;
 				}
-			};
+			}
+
+			if (connection.is_null())
+				break;
 
 			if (!connection->is_connected_to_host()) {
 				stop();
@@ -1236,6 +1299,18 @@ void ScriptEditorDebugger::_notification(int p_what) {
 	}
 }
 
+void ScriptEditorDebugger::_clear_execution() {
+	TreeItem *ti = stack_dump->get_selected();
+	if (!ti)
+		return;
+
+	Dictionary d = ti->get_metadata(0);
+
+	stack_script = ResourceLoader::load(d["file"]);
+	emit_signal("clear_execution", stack_script);
+	stack_script.unref();
+}
+
 void ScriptEditorDebugger::start() {
 
 	stop();
@@ -1276,6 +1351,7 @@ void ScriptEditorDebugger::stop() {
 
 	set_process(false);
 	breaked = false;
+	_clear_execution();
 
 	server->stop();
 	_clear_remote_objects();
@@ -1300,7 +1376,7 @@ void ScriptEditorDebugger::stop() {
 	profiler->set_enabled(true);
 
 	inspect_scene_tree->clear();
-
+	inspector->edit(NULL);
 	EditorNode::get_singleton()->get_pause_button()->set_pressed(false);
 	EditorNode::get_singleton()->get_pause_button()->set_disabled(true);
 	EditorNode::get_singleton()->get_scene_tree_dock()->hide_remote_tree();
@@ -1356,6 +1432,7 @@ void ScriptEditorDebugger::_stack_dump_frame_selected() {
 
 	stack_script = ResourceLoader::load(d["file"]);
 	emit_signal("goto_script_line", stack_script, int(d["line"]) - 1);
+	emit_signal("set_execution", stack_script, int(d["line"]) - 1);
 	stack_script.unref();
 
 	if (connection.is_valid() && connection->is_connected_to_host()) {
@@ -1372,6 +1449,13 @@ void ScriptEditorDebugger::_output_clear() {
 
 	//output->clear();
 	//output->push_color(Color(0,0,0));
+}
+
+void ScriptEditorDebugger::_export_csv() {
+
+	file_dialog->set_mode(EditorFileDialog::MODE_SAVE_FILE);
+	file_dialog_mode = SAVE_CSV;
+	file_dialog->popup_centered_ratio();
 }
 
 String ScriptEditorDebugger::get_var_value(const String &p_var) const {
@@ -1859,6 +1943,7 @@ void ScriptEditorDebugger::_item_menu_id_pressed(int p_option) {
 
 			file_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
 			file_dialog->set_mode(EditorFileDialog::MODE_SAVE_FILE);
+			file_dialog_mode = SAVE_NODE;
 
 			List<String> extensions;
 			Ref<PackedScene> sd = memnew(PackedScene);
@@ -1869,6 +1954,24 @@ void ScriptEditorDebugger::_item_menu_id_pressed(int p_option) {
 			}
 
 			file_dialog->popup_centered_ratio();
+		} break;
+		case ITEM_MENU_COPY_NODE_PATH: {
+
+			TreeItem *ti = inspect_scene_tree->get_selected();
+			String text = ti->get_text(0);
+
+			if (ti->get_parent() == NULL) {
+				text = ".";
+			} else if (ti->get_parent()->get_parent() == NULL) {
+				text = ".";
+			} else {
+				while (ti->get_parent()->get_parent() != inspect_scene_tree->get_root()) {
+					ti = ti->get_parent();
+					text = ti->get_text(0) + "/" + text;
+				}
+			}
+
+			OS::get_singleton()->set_clipboard(text);
 		} break;
 	}
 }
@@ -1884,6 +1987,7 @@ void ScriptEditorDebugger::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("debug_break"), &ScriptEditorDebugger::debug_break);
 	ClassDB::bind_method(D_METHOD("debug_continue"), &ScriptEditorDebugger::debug_continue);
 	ClassDB::bind_method(D_METHOD("_output_clear"), &ScriptEditorDebugger::_output_clear);
+	ClassDB::bind_method(D_METHOD("_export_csv"), &ScriptEditorDebugger::_export_csv);
 	ClassDB::bind_method(D_METHOD("_performance_draw"), &ScriptEditorDebugger::_performance_draw);
 	ClassDB::bind_method(D_METHOD("_performance_select"), &ScriptEditorDebugger::_performance_select);
 	ClassDB::bind_method(D_METHOD("_scene_tree_request"), &ScriptEditorDebugger::_scene_tree_request);
@@ -1920,6 +2024,8 @@ void ScriptEditorDebugger::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_scene_tree_property_value_edited"), &ScriptEditorDebugger::_scene_tree_property_value_edited);
 
 	ADD_SIGNAL(MethodInfo("goto_script_line"));
+	ADD_SIGNAL(MethodInfo("set_execution", PropertyInfo("script"), PropertyInfo(Variant::INT, "line")));
+	ADD_SIGNAL(MethodInfo("clear_execution", PropertyInfo("script")));
 	ADD_SIGNAL(MethodInfo("breaked", PropertyInfo(Variant::BOOL, "reallydid"), PropertyInfo(Variant::BOOL, "can_debug")));
 	ADD_SIGNAL(MethodInfo("show_debugger", PropertyInfo(Variant::BOOL, "reallydid")));
 }
@@ -2205,10 +2311,13 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor) {
 	}
 
 	{ // misc
+		VBoxContainer *misc = memnew(VBoxContainer);
+		misc->set_name(TTR("Misc"));
+		tabs->add_child(misc);
+
 		GridContainer *info_left = memnew(GridContainer);
 		info_left->set_columns(2);
-		info_left->set_name(TTR("Misc"));
-		tabs->add_child(info_left);
+		misc->add_child(info_left);
 		clicked_ctrl = memnew(LineEdit);
 		clicked_ctrl->set_h_size_flags(SIZE_EXPAND_FILL);
 		info_left->add_child(memnew(Label(TTR("Clicked Control:"))));
@@ -2233,6 +2342,16 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor) {
 			le_set->set_disabled(true);
 			le_clear->set_disabled(true);
 		}
+
+		misc->add_child(memnew(VSeparator));
+
+		HBoxContainer *buttons = memnew(HBoxContainer);
+
+		export_csv = memnew(Button(TTR("Export measures as CSV")));
+		export_csv->connect("pressed", this, "_export_csv");
+		buttons->add_child(export_csv);
+
+		misc->add_child(buttons);
 	}
 
 	msgdialog = memnew(AcceptDialog);

@@ -58,7 +58,7 @@ enum PropertyHint {
 	PROPERTY_HINT_ENUM, ///< hint_text= "val1,val2,val3,etc"
 	PROPERTY_HINT_EXP_EASING, /// exponential easing function (Math::ease) use "attenuation" hint string to revert (flip h), "full" to also include in/out. (ie: "attenuation,inout")
 	PROPERTY_HINT_LENGTH, ///< hint_text= "length" (as integer)
-	PROPERTY_HINT_SPRITE_FRAME,
+	PROPERTY_HINT_SPRITE_FRAME, // FIXME: Obsolete: drop whenever we can break compat. Keeping now for GDNative compat.
 	PROPERTY_HINT_KEY_ACCEL, ///< hint_text= "length" (as integer)
 	PROPERTY_HINT_FLAGS, ///< hint_text= "flag1,flag2,etc" (as bit flags)
 	PROPERTY_HINT_LAYERS_2D_RENDER,
@@ -88,6 +88,7 @@ enum PropertyHint {
 	PROPERTY_HINT_PROPERTY_OF_SCRIPT, ///< a property of a script & base
 	PROPERTY_HINT_OBJECT_TOO_BIG, ///< object is too big to send
 	PROPERTY_HINT_NODE_PATH_VALID_TYPES,
+	PROPERTY_HINT_SAVE_FILE, ///< a file path must be passed, hint_text (optionally) is a filter "*.png,*.wav,*.doc,". This opens a save dialog
 	PROPERTY_HINT_MAX,
 	// When updating PropertyHint, also sync the hardcoded list in VisualScriptEditorVariableEdit
 };
@@ -103,7 +104,8 @@ enum PropertyUsageFlags {
 	PROPERTY_USAGE_INTERNATIONALIZED = 64, //hint for internationalized strings
 	PROPERTY_USAGE_GROUP = 128, //used for grouping props in the editor
 	PROPERTY_USAGE_CATEGORY = 256,
-	//those below are deprecated thanks to ClassDB's now class value cache
+	// FIXME: Drop in 4.0, possibly reorder other flags?
+	// Those below are deprecated thanks to ClassDB's now class value cache
 	//PROPERTY_USAGE_STORE_IF_NONZERO = 512, //only store if nonzero
 	//PROPERTY_USAGE_STORE_IF_NONONE = 1024, //only store if false
 	PROPERTY_USAGE_NO_INSTANCE_STATE = 2048,
@@ -120,6 +122,7 @@ enum PropertyUsageFlags {
 	PROPERTY_USAGE_HIGH_END_GFX = 1 << 22,
 	PROPERTY_USAGE_NODE_PATH_FROM_SCENE_ROOT = 1 << 23,
 	PROPERTY_USAGE_RESOURCE_NOT_PERSISTENT = 1 << 24,
+	PROPERTY_USAGE_KEYING_INCREMENTS = 1 << 25, // Used in inspector to increment property when keyed in animation player
 
 	PROPERTY_USAGE_DEFAULT = PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_NETWORK,
 	PROPERTY_USAGE_DEFAULT_INTL = PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_NETWORK | PROPERTY_USAGE_INTERNATIONALIZED,
@@ -129,6 +132,7 @@ enum PropertyUsageFlags {
 #define ADD_SIGNAL(m_signal) ClassDB::add_signal(get_class_static(), m_signal)
 #define ADD_PROPERTY(m_property, m_setter, m_getter) ClassDB::add_property(get_class_static(), m_property, _scs_create(m_setter), _scs_create(m_getter))
 #define ADD_PROPERTYI(m_property, m_setter, m_getter, m_index) ClassDB::add_property(get_class_static(), m_property, _scs_create(m_setter), _scs_create(m_getter), m_index)
+#define ADD_PROPERTY_DEFAULT(m_property, m_default) ClassDB::set_property_default_value(get_class_static(), m_property, m_default)
 #define ADD_GROUP(m_name, m_prefix) ClassDB::add_property_group(get_class_static(), m_name, m_prefix)
 
 struct PropertyInfo {
@@ -175,6 +179,15 @@ struct PropertyInfo {
 			class_name(p_class_name),
 			hint(PROPERTY_HINT_NONE),
 			usage(PROPERTY_USAGE_DEFAULT) {
+	}
+
+	bool operator==(const PropertyInfo &p_info) const {
+		return ((type == p_info.type) &&
+				(name == p_info.name) &&
+				(class_name == p_info.class_name) &&
+				(hint == p_info.hint) &&
+				(hint_string == p_info.hint_string) &&
+				(usage == p_info.usage));
 	}
 
 	bool operator<(const PropertyInfo &p_info) const {
@@ -464,7 +477,7 @@ private:
 	bool _block_signals;
 	int _predelete_ok;
 	Set<Object *> change_receptors;
-	ObjectID _instance_ID;
+	ObjectID _instance_id;
 	bool _predelete();
 	void _postinitialize();
 	bool _can_translate;
@@ -576,7 +589,7 @@ public:
 
 	bool _is_gpl_reversed() const { return false; }
 
-	_FORCE_INLINE_ ObjectID get_instance_id() const { return _instance_ID; }
+	_FORCE_INLINE_ ObjectID get_instance_id() const { return _instance_id; }
 	// this is used for editors
 
 	void add_change_receptor(Object *p_receptor);
@@ -658,6 +671,7 @@ public:
 	void call_multilevel(const StringName &p_name, VARIANT_ARG_LIST); // C++ helper
 
 	void notification(int p_notification, bool p_reversed = false);
+	String to_string();
 
 	//used mainly by script, get and set all INCLUDING string
 	virtual Variant getvar(const Variant &p_key, bool *r_valid = NULL) const;
@@ -672,6 +686,7 @@ public:
 
 	bool has_meta(const String &p_name) const;
 	void set_meta(const String &p_name, const Variant &p_value);
+	void remove_meta(const String &p_name);
 	Variant get_meta(const String &p_name) const;
 	void get_meta_list(List<String> *p_list) const;
 
@@ -774,13 +789,18 @@ class ObjectDB {
 public:
 	typedef void (*DebugFunc)(Object *p_obj);
 
-	static Object *get_instance(ObjectID p_instance_ID);
+	static Object *get_instance(ObjectID p_instance_id);
 	static void debug_objects(DebugFunc p_func);
 	static int get_object_count();
 
 	_FORCE_INLINE_ static bool instance_validate(Object *p_ptr) {
+		rw_lock->read_lock();
 
-		return instance_checks.has(p_ptr);
+		bool exists = instance_checks.has(p_ptr);
+
+		rw_lock->read_unlock();
+
+		return exists;
 	}
 };
 

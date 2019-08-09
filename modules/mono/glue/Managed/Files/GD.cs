@@ -18,7 +18,7 @@ namespace Godot
             return godot_icall_GD_bytes2var(bytes, allow_objects);
         }
 
-        public static object Convert(object what, int type)
+        public static object Convert(object what, Variant.Type type)
         {
             return godot_icall_GD_convert(what, type);
         }
@@ -83,7 +83,7 @@ namespace Godot
 
         public static void Print(params object[] what)
         {
-            godot_icall_GD_print(what);
+            godot_icall_GD_print(Array.ConvertAll(what, x => x.ToString()));
         }
 
         public static void PrintStack()
@@ -93,25 +93,25 @@ namespace Godot
 
         public static void PrintErr(params object[] what)
         {
-            godot_icall_GD_printerr(what);
+            godot_icall_GD_printerr(Array.ConvertAll(what, x => x.ToString()));
         }
 
         public static void PrintRaw(params object[] what)
         {
-            godot_icall_GD_printraw(what);
+            godot_icall_GD_printraw(Array.ConvertAll(what, x => x.ToString()));
         }
 
         public static void PrintS(params object[] what)
         {
-            godot_icall_GD_prints(what);
+            godot_icall_GD_prints(Array.ConvertAll(what, x => x.ToString()));
         }
 
         public static void PrintT(params object[] what)
         {
-            godot_icall_GD_printt(what);
+            godot_icall_GD_printt(Array.ConvertAll(what, x => x.ToString()));
         }
 
-        public static double Randf()
+        public static float Randf()
         {
             return godot_icall_GD_randf();
         }
@@ -200,7 +200,7 @@ namespace Godot
         internal extern static object godot_icall_GD_bytes2var(byte[] bytes, bool allow_objects);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        internal extern static object godot_icall_GD_convert(object what, int type);
+        internal extern static object godot_icall_GD_convert(object what, Variant.Type type);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         internal extern static int godot_icall_GD_hash(object var);
@@ -224,13 +224,14 @@ namespace Godot
         internal extern static void godot_icall_GD_printt(object[] what);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        internal extern static double godot_icall_GD_randf();
+        internal extern static float godot_icall_GD_randf();
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         internal extern static uint godot_icall_GD_randi();
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         internal extern static void godot_icall_GD_randomize();
+
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         internal extern static double godot_icall_GD_rand_range(double from, double to);

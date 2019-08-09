@@ -166,7 +166,7 @@ MonoArray *godot_icall_DynamicGodotObject_SetMemberList(Object *p_ptr) {
 	int i = 0;
 	for (List<PropertyInfo>::Element *E = property_list.front(); E; E = E->next()) {
 		MonoString *boxed = GDMonoMarshal::mono_string_from_godot(E->get().name);
-		mono_array_set(result, MonoString *, i, boxed);
+		mono_array_setref(result, i, boxed);
 		i++;
 	}
 
@@ -192,7 +192,7 @@ MonoBoolean godot_icall_DynamicGodotObject_InvokeMember(Object *p_ptr, MonoStrin
 
 	*r_result = GDMonoMarshal::variant_to_mono_object(result);
 
-	return error.error == OK;
+	return error.error == Variant::CallError::CALL_OK;
 }
 
 MonoBoolean godot_icall_DynamicGodotObject_GetMember(Object *p_ptr, MonoString *p_name, MonoObject **r_result) {
@@ -218,11 +218,27 @@ MonoBoolean godot_icall_DynamicGodotObject_SetMember(Object *p_ptr, MonoString *
 	return valid;
 }
 
+MonoString *godot_icall_Object_ToString(Object *p_ptr) {
+#ifdef DEBUG_ENABLED
+	// Cannot happen in C#; would get an ObjectDisposedException instead.
+	CRASH_COND(p_ptr == NULL);
+
+	if (ScriptDebugger::get_singleton() && !Object::cast_to<Reference>(p_ptr)) { // Only if debugging!
+		// Cannot happen either in C#; the handle is nullified when the object is destroyed
+		CRASH_COND(!ObjectDB::instance_validate(p_ptr));
+	}
+#endif
+
+	String result = "[" + p_ptr->get_class() + ":" + itos(p_ptr->get_instance_id()) + "]";
+	return GDMonoMarshal::mono_string_from_godot(result);
+}
+
 void godot_register_object_icalls() {
 	mono_add_internal_call("Godot.Object::godot_icall_Object_Ctor", (void *)godot_icall_Object_Ctor);
 	mono_add_internal_call("Godot.Object::godot_icall_Object_Disposed", (void *)godot_icall_Object_Disposed);
 	mono_add_internal_call("Godot.Object::godot_icall_Reference_Disposed", (void *)godot_icall_Reference_Disposed);
 	mono_add_internal_call("Godot.Object::godot_icall_Object_ClassDB_get_method", (void *)godot_icall_Object_ClassDB_get_method);
+	mono_add_internal_call("Godot.Object::godot_icall_Object_ToString", (void *)godot_icall_Object_ToString);
 	mono_add_internal_call("Godot.Object::godot_icall_Object_weakref", (void *)godot_icall_Object_weakref);
 	mono_add_internal_call("Godot.SignalAwaiter::godot_icall_SignalAwaiter_connect", (void *)godot_icall_SignalAwaiter_connect);
 	mono_add_internal_call("Godot.DynamicGodotObject::godot_icall_DynamicGodotObject_SetMemberList", (void *)godot_icall_DynamicGodotObject_SetMemberList);

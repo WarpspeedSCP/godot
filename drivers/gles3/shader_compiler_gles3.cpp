@@ -472,6 +472,19 @@ String ShaderCompilerGLES3::_dump_node_code(SL::Node *p_node, int p_level, Gener
 				r_gen_code.fragment_global += interp_mode + "in " + vcode;
 			}
 
+			for (Map<StringName, SL::ShaderNode::Constant>::Element *E = pnode->constants.front(); E; E = E->next()) {
+				String gcode;
+				gcode += "const ";
+				gcode += _prestr(E->get().precision);
+				gcode += _typestr(E->get().type);
+				gcode += " " + _mkid(E->key());
+				gcode += "=";
+				gcode += _dump_node_code(E->get().initializer, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+				gcode += ";\n";
+				r_gen_code.vertex_global += gcode;
+				r_gen_code.fragment_global += gcode;
+			}
+
 			Map<StringName, String> function_code;
 
 			//code for functions
@@ -542,7 +555,12 @@ String ShaderCompilerGLES3::_dump_node_code(SL::Node *p_node, int p_level, Gener
 		case SL::Node::TYPE_VARIABLE_DECLARATION: {
 			SL::VariableDeclarationNode *vdnode = (SL::VariableDeclarationNode *)p_node;
 
-			String declaration = _prestr(vdnode->precision) + _typestr(vdnode->datatype);
+			String declaration;
+			if (vdnode->is_const) {
+				declaration += "const ";
+			}
+			declaration += _prestr(vdnode->precision);
+			declaration += _typestr(vdnode->datatype);
 			for (int i = 0; i < vdnode->declarations.size(); i++) {
 				if (i > 0) {
 					declaration += ",";
@@ -585,6 +603,93 @@ String ShaderCompilerGLES3::_dump_node_code(SL::Node *p_node, int p_level, Gener
 				code = _mkid(vnode->name);
 
 			if (vnode->name == time_name) {
+				if (current_func_name == vertex_name) {
+					r_gen_code.uses_vertex_time = true;
+				}
+				if (current_func_name == fragment_name || current_func_name == light_name) {
+					r_gen_code.uses_fragment_time = true;
+				}
+			}
+
+		} break;
+		case SL::Node::TYPE_ARRAY_DECLARATION: {
+
+			SL::ArrayDeclarationNode *adnode = (SL::ArrayDeclarationNode *)p_node;
+
+			String declaration;
+			if (adnode->is_const) {
+				declaration += "const ";
+			}
+			declaration += _prestr(adnode->precision);
+			declaration += _typestr(adnode->datatype);
+			for (int i = 0; i < adnode->declarations.size(); i++) {
+				if (i > 0) {
+					declaration += ",";
+				} else {
+					declaration += " ";
+				}
+				declaration += _mkid(adnode->declarations[i].name);
+				declaration += "[";
+				declaration += itos(adnode->declarations[i].size);
+				declaration += "]";
+				int sz = adnode->declarations[i].initializer.size();
+				if (sz > 0) {
+					declaration += "=";
+					declaration += _typestr(adnode->datatype);
+					declaration += "[";
+					declaration += itos(sz);
+					declaration += "]";
+					declaration += "(";
+					for (int j = 0; j < sz; j++) {
+						declaration += _dump_node_code(adnode->declarations[i].initializer[j], p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+						if (j != sz - 1) {
+							declaration += ", ";
+						}
+					}
+					declaration += ")";
+				}
+			}
+
+			code += declaration;
+		} break;
+		case SL::Node::TYPE_ARRAY: {
+			SL::ArrayNode *anode = (SL::ArrayNode *)p_node;
+
+			if (p_assigning && p_actions.write_flag_pointers.has(anode->name)) {
+				*p_actions.write_flag_pointers[anode->name] = true;
+			}
+
+			if (p_default_actions.usage_defines.has(anode->name) && !used_name_defines.has(anode->name)) {
+				String define = p_default_actions.usage_defines[anode->name];
+				if (define.begins_with("@")) {
+					define = p_default_actions.usage_defines[define.substr(1, define.length())];
+				}
+				r_gen_code.defines.push_back(define.utf8());
+				used_name_defines.insert(anode->name);
+			}
+
+			if (p_actions.usage_flag_pointers.has(anode->name) && !used_flag_pointers.has(anode->name)) {
+				*p_actions.usage_flag_pointers[anode->name] = true;
+				used_flag_pointers.insert(anode->name);
+			}
+
+			if (p_default_actions.renames.has(anode->name))
+				code = p_default_actions.renames[anode->name];
+			else
+				code = _mkid(anode->name);
+
+			if (anode->call_expression != NULL) {
+				code += ".";
+				code += _dump_node_code(anode->call_expression, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+			}
+
+			if (anode->index_expression != NULL) {
+				code += "[";
+				code += _dump_node_code(anode->index_expression, p_level, r_gen_code, p_actions, p_default_actions, p_assigning);
+				code += "]";
+			}
+
+			if (anode->name == time_name) {
 				if (current_func_name == vertex_name) {
 					r_gen_code.uses_vertex_time = true;
 				}
@@ -944,6 +1049,7 @@ ShaderCompilerGLES3::ShaderCompilerGLES3() {
 	actions[VS::SHADER_SPATIAL].render_mode_defines["specular_disabled"] = "#define SPECULAR_DISABLED\n";
 	actions[VS::SHADER_SPATIAL].render_mode_defines["shadows_disabled"] = "#define SHADOWS_DISABLED\n";
 	actions[VS::SHADER_SPATIAL].render_mode_defines["ambient_light_disabled"] = "#define AMBIENT_LIGHT_DISABLED\n";
+	actions[VS::SHADER_SPATIAL].render_mode_defines["shadow_to_opacity"] = "#define USE_SHADOW_TO_OPACITY\n";
 
 	/* PARTICLES SHADER */
 

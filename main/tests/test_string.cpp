@@ -33,6 +33,7 @@
 //#include "core/math/math_funcs.h"
 #include "core/io/ip_address.h"
 #include "core/os/os.h"
+#include "modules/regex/regex.h"
 #include <stdio.h>
 
 #include "test_string.h"
@@ -56,7 +57,7 @@ bool test_2() {
 	OS::get_singleton()->print("\n\nTest 2: Assign from string (operator=)\n");
 
 	String s = "Dolly";
-	String t = s;
+	const String &t = s;
 
 	OS::get_singleton()->print("\tExpected: Dolly\n");
 	OS::get_singleton()->print("\tResulted: %ls\n", t.c_str());
@@ -69,7 +70,7 @@ bool test_3() {
 	OS::get_singleton()->print("\n\nTest 3: Assign from c-string (copycon)\n");
 
 	String s("Sheep");
-	String t(s);
+	const String &t(s);
 
 	OS::get_singleton()->print("\tExpected: Sheep\n");
 	OS::get_singleton()->print("\tResulted: %ls\n", t.c_str());
@@ -429,9 +430,20 @@ bool test_25() {
 
 bool test_26() {
 
-	//TODO: Do replacement RegEx test
-	return true;
-};
+	OS::get_singleton()->print("\n\nTest 26: RegEx substitution\n");
+
+	String s = "Double all the vowels.";
+
+	OS::get_singleton()->print("\tString: %ls\n", s.c_str());
+	OS::get_singleton()->print("\tRepeating instances of 'aeiou' once\n");
+
+	RegEx re("(?<vowel>[aeiou])");
+	s = re.sub(s, "$0$vowel", true);
+
+	OS::get_singleton()->print("\tResult: %ls\n", s.c_str());
+
+	return (s == "Doouublee aall thee vooweels.");
+}
 
 struct test_27_data {
 	char const *data;
@@ -1005,8 +1017,8 @@ bool test_32() {
 	STRIP_TEST(String("abca").lstrip("a") == "bca");
 	STRIP_TEST(String("abc").rstrip("a") == "abc");
 	STRIP_TEST(String("abca").rstrip("a") == "abc");
-	// in utf-8 "¿" has the same first byte as "µ"
-	// and the same second as "ÿ"
+	// in utf-8 "¿" (\u00bf) has the same first byte as "µ" (\u00b5)
+	// and the same second as "ÿ" (\u00ff)
 	STRIP_TEST(String::utf8("¿").lstrip(String::utf8("µÿ")) == String::utf8("¿"));
 	STRIP_TEST(String::utf8("¿").rstrip(String::utf8("µÿ")) == String::utf8("¿"));
 	STRIP_TEST(String::utf8("µ¿ÿ").lstrip(String::utf8("µÿ")) == String::utf8("¿ÿ"));
@@ -1034,8 +1046,8 @@ bool test_32() {
 	STRIP_TEST(String("abca").lstrip("qwajkl") == "bca");
 	STRIP_TEST(String("abc").rstrip("qwajkl") == "abc");
 	STRIP_TEST(String("abca").rstrip("qwajkl") == "abc");
-	// in utf-8 "¿" has the same first byte as "µ"
-	// and the same second as "ÿ"
+	// in utf-8 "¿" (\u00bf) has the same first byte as "µ" (\u00b5)
+	// and the same second as "ÿ" (\u00ff)
 	STRIP_TEST(String::utf8("¿").lstrip(String::utf8("qwaµÿjkl")) == String::utf8("¿"));
 	STRIP_TEST(String::utf8("¿").rstrip(String::utf8("qwaµÿjkl")) == String::utf8("¿"));
 	STRIP_TEST(String::utf8("µ¿ÿ").lstrip(String::utf8("qwaµÿjkl")) == String::utf8("¿ÿ"));
@@ -1050,7 +1062,58 @@ bool test_33() {
 	OS::get_singleton()->print("\n\nTest 33: parse_utf8(null, -1)\n");
 
 	String empty;
-	return empty.parse_utf8(NULL, -1) == true;
+	return empty.parse_utf8(NULL, -1);
+}
+
+bool test_34() {
+	OS::get_singleton()->print("\n\nTest 34: Cyrillic to_lower()\n");
+
+	String upper = String::utf8("АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ");
+	String lower = String::utf8("абвгдеёжзийклмнопрстуфхцчшщъыьэюя");
+
+	String test = upper.to_lower();
+
+	bool state = test == lower;
+
+	return state;
+}
+
+bool test_35() {
+#define COUNT_TEST(x)                                            \
+	{                                                            \
+		bool success = x;                                        \
+		state = state && success;                                \
+		if (!success) {                                          \
+			OS::get_singleton()->print("\tfailed at: %s\n", #x); \
+		}                                                        \
+	}
+
+	OS::get_singleton()->print("\n\nTest 35: count and countn function\n");
+	bool state = true;
+
+	COUNT_TEST(String("").count("Test") == 0);
+	COUNT_TEST(String("Test").count("") == 0);
+	COUNT_TEST(String("Test").count("test") == 0);
+	COUNT_TEST(String("Test").count("TEST") == 0);
+	COUNT_TEST(String("TEST").count("TEST") == 1);
+	COUNT_TEST(String("Test").count("Test") == 1);
+	COUNT_TEST(String("aTest").count("Test") == 1);
+	COUNT_TEST(String("Testa").count("Test") == 1);
+	COUNT_TEST(String("TestTestTest").count("Test") == 3);
+	COUNT_TEST(String("TestTestTest").count("TestTest") == 1);
+	COUNT_TEST(String("TestGodotTestGodotTestGodot").count("Test") == 3);
+
+	COUNT_TEST(String("TestTestTestTest").count("Test", 4, 8) == 1);
+	COUNT_TEST(String("TestTestTestTest").count("Test", 4, 12) == 2);
+	COUNT_TEST(String("TestTestTestTest").count("Test", 4, 16) == 3);
+	COUNT_TEST(String("TestTestTestTest").count("Test", 4) == 3);
+
+	COUNT_TEST(String("Test").countn("test") == 1);
+	COUNT_TEST(String("Test").countn("TEST") == 1);
+	COUNT_TEST(String("testTest-Testatest").countn("tEst") == 4);
+	COUNT_TEST(String("testTest-TeStatest").countn("tEsT", 4, 16) == 2);
+
+	return state;
 }
 
 typedef bool (*TestFunc)(void);
@@ -1090,6 +1153,8 @@ TestFunc test_funcs[] = {
 	test_31,
 	test_32,
 	test_33,
+	test_34,
+	test_35,
 	0
 
 };

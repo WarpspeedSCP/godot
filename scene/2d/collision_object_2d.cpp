@@ -29,6 +29,7 @@
 /*************************************************************************/
 
 #include "collision_object_2d.h"
+
 #include "scene/scene_string_names.h"
 #include "servers/physics_2d_server.h"
 
@@ -56,7 +57,7 @@ void CollisionObject2D::_notification(int p_what) {
 			_update_pickable();
 
 			//get space
-		}
+		} break;
 
 		case NOTIFICATION_ENTER_CANVAS: {
 
@@ -64,7 +65,7 @@ void CollisionObject2D::_notification(int p_what) {
 				Physics2DServer::get_singleton()->area_attach_canvas_instance_id(rid, get_canvas_layer_instance_id());
 			else
 				Physics2DServer::get_singleton()->body_attach_canvas_instance_id(rid, get_canvas_layer_instance_id());
-		}
+		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 
@@ -101,7 +102,7 @@ void CollisionObject2D::_notification(int p_what) {
 				Physics2DServer::get_singleton()->area_attach_canvas_instance_id(rid, 0);
 			else
 				Physics2DServer::get_singleton()->body_attach_canvas_instance_id(rid, 0);
-		}
+		} break;
 	}
 }
 
@@ -217,12 +218,13 @@ void CollisionObject2D::shape_owner_set_transform(uint32_t p_owner, const Transf
 	ERR_FAIL_COND(!shapes.has(p_owner));
 
 	ShapeData &sd = shapes[p_owner];
+
 	sd.xform = p_transform;
 	for (int i = 0; i < sd.shapes.size(); i++) {
 		if (area) {
-			Physics2DServer::get_singleton()->area_set_shape_transform(rid, sd.shapes[i].index, p_transform);
+			Physics2DServer::get_singleton()->area_set_shape_transform(rid, sd.shapes[i].index, sd.xform);
 		} else {
-			Physics2DServer::get_singleton()->body_set_shape_transform(rid, sd.shapes[i].index, p_transform);
+			Physics2DServer::get_singleton()->body_set_shape_transform(rid, sd.shapes[i].index, sd.xform);
 		}
 	}
 }
@@ -250,9 +252,9 @@ void CollisionObject2D::shape_owner_add_shape(uint32_t p_owner, const Ref<Shape2
 	s.index = total_subshapes;
 	s.shape = p_shape;
 	if (area) {
-		Physics2DServer::get_singleton()->area_add_shape(rid, p_shape->get_rid(), sd.xform);
+		Physics2DServer::get_singleton()->area_add_shape(rid, p_shape->get_rid(), sd.xform, sd.disabled);
 	} else {
-		Physics2DServer::get_singleton()->body_add_shape(rid, p_shape->get_rid(), sd.xform);
+		Physics2DServer::get_singleton()->body_add_shape(rid, p_shape->get_rid(), sd.xform, sd.disabled);
 	}
 	sd.shapes.push_back(s);
 
@@ -386,8 +388,8 @@ String CollisionObject2D::get_configuration_warning() const {
 	String warning = Node2D::get_configuration_warning();
 
 	if (shapes.empty()) {
-		if (warning == String()) {
-			warning += "\n";
+		if (!warning.empty()) {
+			warning += "\n\n";
 		}
 		warning += TTR("This node has no shape, so it can't collide or interact with other objects.\nConsider adding a CollisionShape2D or CollisionPolygon2D as a child to define its shape.");
 	}

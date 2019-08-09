@@ -51,6 +51,7 @@ Curve::Curve() {
 	_baked_cache_dirty = false;
 	_min_value = 0;
 	_max_value = 1;
+	_minmax_set_once = 0b00;
 }
 
 int Curve::add_point(Vector2 p_pos, real_t left_tangent, real_t right_tangent, TangentMode left_mode, TangentMode right_mode) {
@@ -268,7 +269,7 @@ void Curve::update_auto_tangents(int i) {
 	}
 
 	if (i + 1 < _points.size()) {
-		if (p.right_mode == TANGENT_LINEAR && i + 1 < _points.size()) {
+		if (p.right_mode == TANGENT_LINEAR) {
 			Vector2 v = (_points[i + 1].pos - p.pos).normalized();
 			p.right_tangent = v.y / v.x;
 		}
@@ -282,20 +283,24 @@ void Curve::update_auto_tangents(int i) {
 #define MIN_Y_RANGE 0.01
 
 void Curve::set_min_value(float p_min) {
-	if (p_min > _max_value - MIN_Y_RANGE)
+	if (_minmax_set_once & 0b11 && p_min > _max_value - MIN_Y_RANGE) {
 		_min_value = _max_value - MIN_Y_RANGE;
-	else
+	} else {
+		_minmax_set_once |= 0b10; // first bit is "min set"
 		_min_value = p_min;
+	}
 	// Note: min and max are indicative values,
 	// it's still possible that existing points are out of range at this point.
 	emit_signal(SIGNAL_RANGE_CHANGED);
 }
 
 void Curve::set_max_value(float p_max) {
-	if (p_max < _min_value + MIN_Y_RANGE)
+	if (_minmax_set_once & 0b11 && p_max < _min_value + MIN_Y_RANGE) {
 		_max_value = _min_value + MIN_Y_RANGE;
-	else
+	} else {
+		_minmax_set_once |= 0b01; // second bit is "max set"
 		_max_value = p_max;
+	}
 	emit_signal(SIGNAL_RANGE_CHANGED);
 }
 
@@ -782,7 +787,8 @@ Vector2 Curve2D::interpolate_baked(float p_offset, bool p_cubic) const {
 	if (idx >= bpc - 1) {
 		return r[bpc - 1];
 	} else if (idx == bpc - 2) {
-		frac /= Math::fmod(baked_max_ofs, bake_interval);
+		if (frac > 0)
+			frac /= Math::fmod(baked_max_ofs, bake_interval);
 	} else {
 		frac /= bake_interval;
 	}
@@ -1352,7 +1358,8 @@ Vector3 Curve3D::interpolate_baked(float p_offset, bool p_cubic) const {
 	if (idx >= bpc - 1) {
 		return r[bpc - 1];
 	} else if (idx == bpc - 2) {
-		frac /= Math::fmod(baked_max_ofs, bake_interval);
+		if (frac > 0)
+			frac /= Math::fmod(baked_max_ofs, bake_interval);
 	} else {
 		frac /= bake_interval;
 	}
@@ -1396,7 +1403,8 @@ float Curve3D::interpolate_baked_tilt(float p_offset) const {
 	if (idx >= bpc - 1) {
 		return r[bpc - 1];
 	} else if (idx == bpc - 2) {
-		frac /= Math::fmod(baked_max_ofs, bake_interval);
+		if (frac > 0)
+			frac /= Math::fmod(baked_max_ofs, bake_interval);
 	} else {
 		frac /= bake_interval;
 	}

@@ -26,7 +26,7 @@ namespace Godot
     /// dynamic sprite = GetNode("Sprite").DynamicGodotObject;
     /// sprite.add_child(this);
     ///
-    /// if ((sprite.hframes * sprite.vframes) > 0)
+    /// if ((sprite.hframes * sprite.vframes) &gt; 0)
     ///     sprite.frame = 0;
     /// </code>
     /// </example>
@@ -202,7 +202,7 @@ namespace Godot
         //public override bool TryDeleteIndex(DeleteIndexBinder binder, object[] indexes);
         //public override bool TryDeleteMember(DeleteMemberBinder binder);
 
-        // Invokation on the object itself, e.g.: obj(param)
+        // Invocation on the object itself, e.g.: obj(param)
         //public override bool TryInvoke(InvokeBinder binder, object[] args, out object result);
 
         // No unnary operations to handle

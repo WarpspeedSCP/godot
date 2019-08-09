@@ -107,7 +107,7 @@ bool EditorSettings::_set_only(const StringName &p_name, const Variant &p_value)
 		}
 
 		if (save_changed_setting) {
-			if (props[p_name].save != true) {
+			if (!props[p_name].save) {
 				props[p_name].save = true;
 				changed = true;
 			}
@@ -268,6 +268,11 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 		String host_lang = OS::get_singleton()->get_locale();
 		host_lang = TranslationServer::standardize_locale(host_lang);
 
+		// Some locales are not properly supported currently in Godot due to lack of font shaping
+		// (e.g. Arabic or Hindi), so even though we have work in progress translations for them,
+		// we skip them as they don't render properly. (GH-28577)
+		const Vector<String> locales_to_skip = String("ar,bn,fa,he,hi,ml,si,ta,te,ur").split(",");
+
 		String best;
 
 		EditorTranslationList *etl = _editor_translations;
@@ -275,6 +280,15 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 		while (etl->data) {
 
 			const String &locale = etl->lang;
+
+			// Skip locales which we can't render properly (see above comment).
+			// Test against language code without regional variants (e.g. ur_PK).
+			String lang_code = locale.get_slice("_", 0);
+			if (locales_to_skip.find(lang_code) != -1) {
+				etl++;
+				continue;
+			}
+
 			lang_hint += ",";
 			lang_hint += locale;
 
@@ -304,17 +318,14 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("interface/editor/display_scale", 0);
 	hints["interface/editor/display_scale"] = PropertyInfo(Variant::INT, "interface/editor/display_scale", PROPERTY_HINT_ENUM, "Auto,75%,100%,125%,150%,175%,200%,Custom", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
 	_initial_set("interface/editor/custom_display_scale", 1.0f);
-	hints["interface/editor/custom_display_scale"] = PropertyInfo(Variant::REAL, "interface/editor/custom_display_scale", PROPERTY_HINT_RANGE, "0.75,3,0.01", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
+	hints["interface/editor/custom_display_scale"] = PropertyInfo(Variant::REAL, "interface/editor/custom_display_scale", PROPERTY_HINT_RANGE, "0.5,3,0.01", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
 	_initial_set("interface/editor/main_font_size", 14);
-	hints["interface/editor/main_font_size"] = PropertyInfo(Variant::INT, "interface/editor/main_font_size", PROPERTY_HINT_RANGE, "10,40,1", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
+	hints["interface/editor/main_font_size"] = PropertyInfo(Variant::INT, "interface/editor/main_font_size", PROPERTY_HINT_RANGE, "8,48,1", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
 	_initial_set("interface/editor/code_font_size", 14);
-	hints["interface/editor/code_font_size"] = PropertyInfo(Variant::INT, "interface/editor/code_font_size", PROPERTY_HINT_RANGE, "8,96,1", PROPERTY_USAGE_DEFAULT);
-	_initial_set("interface/editor/main_font_antialiased", true);
-	_initial_set("interface/editor/code_font_antialiased", true);
-	_initial_set("interface/editor/main_font_hinting", 2);
-	hints["interface/editor/main_font_hinting"] = PropertyInfo(Variant::INT, "interface/editor/main_font_hinting", PROPERTY_HINT_ENUM, "None,Light,Normal", PROPERTY_USAGE_DEFAULT);
-	_initial_set("interface/editor/code_font_hinting", 2);
-	hints["interface/editor/code_font_hinting"] = PropertyInfo(Variant::INT, "interface/editor/code_font_hinting", PROPERTY_HINT_ENUM, "None,Light,Normal", PROPERTY_USAGE_DEFAULT);
+	hints["interface/editor/code_font_size"] = PropertyInfo(Variant::INT, "interface/editor/code_font_size", PROPERTY_HINT_RANGE, "8,48,1", PROPERTY_USAGE_DEFAULT);
+	_initial_set("interface/editor/font_antialiased", true);
+	_initial_set("interface/editor/font_hinting", 2);
+	hints["interface/editor/font_hinting"] = PropertyInfo(Variant::INT, "interface/editor/font_hinting", PROPERTY_HINT_ENUM, "None,Light,Normal", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/editor/main_font", "");
 	hints["interface/editor/main_font"] = PropertyInfo(Variant::STRING, "interface/editor/main_font", PROPERTY_HINT_GLOBAL_FILE, "*.ttf,*.otf", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/editor/main_font_bold", "");
@@ -322,11 +333,13 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("interface/editor/code_font", "");
 	hints["interface/editor/code_font"] = PropertyInfo(Variant::STRING, "interface/editor/code_font", PROPERTY_HINT_GLOBAL_FILE, "*.ttf,*.otf", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/editor/dim_editor_on_dialog_popup", true);
-	_initial_set("interface/editor/dim_amount", 0.6f);
-	hints["interface/editor/dim_amount"] = PropertyInfo(Variant::REAL, "interface/editor/dim_amount", PROPERTY_HINT_RANGE, "0,1,0.01", PROPERTY_USAGE_DEFAULT);
-	_initial_set("interface/editor/dim_transition_time", 0.08f);
-	hints["interface/editor/dim_transition_time"] = PropertyInfo(Variant::REAL, "interface/editor/dim_transition_time", PROPERTY_HINT_RANGE, "0,1,0.001", PROPERTY_USAGE_DEFAULT);
+	_initial_set("interface/editor/low_processor_mode_sleep_usec", 6900); // ~144 FPS
+	hints["interface/editor/low_processor_mode_sleep_usec"] = PropertyInfo(Variant::REAL, "interface/editor/low_processor_mode_sleep_usec", PROPERTY_HINT_RANGE, "1,100000,1", PROPERTY_USAGE_DEFAULT);
+	_initial_set("interface/editor/unfocused_low_processor_mode_sleep_usec", 50000); // 20 FPS
+	hints["interface/editor/unfocused_low_processor_mode_sleep_usec"] = PropertyInfo(Variant::REAL, "interface/editor/unfocused_low_processor_mode_sleep_usec", PROPERTY_HINT_RANGE, "1,100000,1", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/editor/separate_distraction_mode", false);
+	_initial_set("interface/editor/automatically_open_screenshots", true);
+	_initial_set("interface/editor/hide_console_window", false);
 	_initial_set("interface/editor/save_each_scene_on_quit", true); // Regression
 	_initial_set("interface/editor/quit_confirmation", true);
 
@@ -335,9 +348,9 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	hints["interface/theme/preset"] = PropertyInfo(Variant::STRING, "interface/theme/preset", PROPERTY_HINT_ENUM, "Default,Alien,Arc,Godot 2,Grey,Light,Solarized (Dark),Solarized (Light),Custom", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/theme/icon_and_font_color", 0);
 	hints["interface/theme/icon_and_font_color"] = PropertyInfo(Variant::INT, "interface/theme/icon_and_font_color", PROPERTY_HINT_ENUM, "Auto,Dark,Light", PROPERTY_USAGE_DEFAULT);
-	_initial_set("interface/theme/base_color", Color::html("#323b4f"));
+	_initial_set("interface/theme/base_color", Color(0.2, 0.23, 0.31));
 	hints["interface/theme/base_color"] = PropertyInfo(Variant::COLOR, "interface/theme/base_color", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT);
-	_initial_set("interface/theme/accent_color", Color::html("#699ce8"));
+	_initial_set("interface/theme/accent_color", Color(0.41, 0.61, 0.91));
 	hints["interface/theme/accent_color"] = PropertyInfo(Variant::COLOR, "interface/theme/accent_color", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/theme/contrast", 0.25);
 	hints["interface/theme/contrast"] = PropertyInfo(Variant::REAL, "interface/theme/contrast", PROPERTY_HINT_RANGE, "0.01, 1, 0.01");
@@ -407,7 +420,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("text_editor/theme/color_theme", "Adaptive");
 	hints["text_editor/theme/color_theme"] = PropertyInfo(Variant::STRING, "text_editor/theme/color_theme", PROPERTY_HINT_ENUM, "Adaptive,Default,Custom");
 	_initial_set("text_editor/theme/line_spacing", 6);
-	_initial_set("text_editor/theme/selection_color", Color::html("40808080"));
+	hints["text_editor/theme/line_spacing"] = PropertyInfo(Variant::INT, "text_editor/theme/line_spacing", PROPERTY_HINT_RANGE, "0,50,1");
 
 	_load_default_text_editor_theme();
 
@@ -425,11 +438,14 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("text_editor/indent/auto_indent", true);
 	_initial_set("text_editor/indent/convert_indent_on_save", false);
 	_initial_set("text_editor/indent/draw_tabs", true);
+	_initial_set("text_editor/indent/draw_spaces", false);
 
 	// Line numbers
 	_initial_set("text_editor/line_numbers/show_line_numbers", true);
 	_initial_set("text_editor/line_numbers/line_numbers_zero_padded", false);
+	_initial_set("text_editor/line_numbers/show_bookmark_gutter", true);
 	_initial_set("text_editor/line_numbers/show_breakpoint_gutter", true);
+	_initial_set("text_editor/line_numbers/show_info_gutter", true);
 	_initial_set("text_editor/line_numbers/code_folding", true);
 	_initial_set("text_editor/line_numbers/word_wrap", false);
 	_initial_set("text_editor/line_numbers/show_line_length_guideline", false);
@@ -459,15 +475,25 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("text_editor/cursor/right_click_moves_caret", true);
 
 	// Completion
-	_initial_set("text_editor/completion/idle_parse_delay", 2);
-	_initial_set("text_editor/completion/auto_brace_complete", false);
+	_initial_set("text_editor/completion/idle_parse_delay", 2.0);
+	hints["text_editor/completion/idle_parse_delay"] = PropertyInfo(Variant::REAL, "text_editor/completion/idle_parse_delay", PROPERTY_HINT_RANGE, "0.1, 10, 0.01");
+	_initial_set("text_editor/completion/auto_brace_complete", true);
+	_initial_set("text_editor/completion/code_complete_delay", 0.3);
+	hints["text_editor/completion/code_complete_delay"] = PropertyInfo(Variant::REAL, "text_editor/completion/code_complete_delay", PROPERTY_HINT_RANGE, "0.01, 5, 0.01");
 	_initial_set("text_editor/completion/put_callhint_tooltip_below_current_line", true);
 	_initial_set("text_editor/completion/callhint_tooltip_offset", Vector2());
 	_initial_set("text_editor/completion/complete_file_paths", true);
 	_initial_set("text_editor/completion/add_type_hints", false);
+	_initial_set("text_editor/completion/use_single_quotes", false);
 
 	// Help
 	_initial_set("text_editor/help/show_help_index", true);
+	_initial_set("text_editor/help/help_font_size", 15);
+	hints["text_editor/help/help_font_size"] = PropertyInfo(Variant::INT, "text_editor/help/help_font_size", PROPERTY_HINT_RANGE, "8,48,1");
+	_initial_set("text_editor/help/help_source_font_size", 14);
+	hints["text_editor/help/help_source_font_size"] = PropertyInfo(Variant::INT, "text_editor/help/help_source_font_size", PROPERTY_HINT_RANGE, "8,48,1");
+	_initial_set("text_editor/help/help_title_font_size", 23);
+	hints["text_editor/help/help_title_font_size"] = PropertyInfo(Variant::INT, "text_editor/help/help_title_font_size", PROPERTY_HINT_RANGE, "8,48,1");
 
 	/* Editors */
 
@@ -475,10 +501,10 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("editors/grid_map/pick_distance", 5000.0);
 
 	// 3D
-	_initial_set("editors/3d/primary_grid_color", Color::html("909090"));
+	_initial_set("editors/3d/primary_grid_color", Color(0.56, 0.56, 0.56));
 	hints["editors/3d/primary_grid_color"] = PropertyInfo(Variant::COLOR, "editors/3d/primary_grid_color", PROPERTY_HINT_COLOR_NO_ALPHA, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
 
-	_initial_set("editors/3d/secondary_grid_color", Color::html("606060"));
+	_initial_set("editors/3d/secondary_grid_color", Color(0.38, 0.38, 0.38));
 	hints["editors/3d/secondary_grid_color"] = PropertyInfo(Variant::COLOR, "editors/3d/secondary_grid_color", PROPERTY_HINT_COLOR_NO_ALPHA, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
 
 	_initial_set("editors/3d/grid_size", 50);
@@ -542,10 +568,10 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("editors/2d/bone_ik_color", Color(0.9, 0.9, 0.45, 0.9));
 	_initial_set("editors/2d/bone_outline_color", Color(0.35, 0.35, 0.35));
 	_initial_set("editors/2d/bone_outline_size", 2);
-	_initial_set("editors/2d/keep_margins_when_changing_anchors", false);
 	_initial_set("editors/2d/viewport_border_color", Color(0.4, 0.4, 1.0, 0.4));
+	_initial_set("editors/2d/constrain_editor_view", true);
 	_initial_set("editors/2d/warped_mouse_panning", true);
-	_initial_set("editors/2d/simple_spacebar_panning", false);
+	_initial_set("editors/2d/simple_panning", false);
 	_initial_set("editors/2d/scroll_to_pan", false);
 	_initial_set("editors/2d/pan_speed", 20);
 
@@ -576,7 +602,8 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("run/auto_save/save_before_running", true);
 
 	// Output
-	hints["run/output/font_size"] = PropertyInfo(Variant::INT, "run/output/font_size", PROPERTY_HINT_RANGE, "8,96,1", PROPERTY_USAGE_DEFAULT);
+	_initial_set("run/output/font_size", 13);
+	hints["run/output/font_size"] = PropertyInfo(Variant::INT, "run/output/font_size", PROPERTY_HINT_RANGE, "8,48,1");
 	_initial_set("run/output/always_clear_output_on_play", true);
 	_initial_set("run/output/always_open_output_on_play", true);
 	_initial_set("run/output/always_close_output_on_stop", false);
@@ -584,7 +611,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	/* Extra config */
 
 	_initial_set("project_manager/sorting_order", 0);
-	hints["project_manager/sorting_order"] = PropertyInfo(Variant::INT, "project_manager/sorting_order", PROPERTY_HINT_ENUM, "Name,Last Modified");
+	hints["project_manager/sorting_order"] = PropertyInfo(Variant::INT, "project_manager/sorting_order", PROPERTY_HINT_ENUM, "Name,Path,Last Modified");
 
 	if (p_extra_config.is_valid()) {
 
@@ -617,37 +644,39 @@ void EditorSettings::_load_default_text_editor_theme() {
 
 	bool dark_theme = is_dark_theme();
 
-	_initial_set("text_editor/highlighting/symbol_color", Color::html("badfff"));
-	_initial_set("text_editor/highlighting/keyword_color", Color::html("ffffb3"));
-	_initial_set("text_editor/highlighting/base_type_color", Color::html("a4ffd4"));
-	_initial_set("text_editor/highlighting/engine_type_color", Color::html("83d3ff"));
-	_initial_set("text_editor/highlighting/comment_color", Color::html("676767"));
-	_initial_set("text_editor/highlighting/string_color", Color::html("ef6ebe"));
-	_initial_set("text_editor/highlighting/background_color", dark_theme ? Color::html("3b000000") : Color::html("#323b4f"));
-	_initial_set("text_editor/highlighting/completion_background_color", Color::html("2C2A32"));
-	_initial_set("text_editor/highlighting/completion_selected_color", Color::html("434244"));
-	_initial_set("text_editor/highlighting/completion_existing_color", Color::html("21dfdfdf"));
-	_initial_set("text_editor/highlighting/completion_scroll_color", Color::html("ffffff"));
-	_initial_set("text_editor/highlighting/completion_font_color", Color::html("aaaaaa"));
-	_initial_set("text_editor/highlighting/text_color", Color::html("aaaaaa"));
-	_initial_set("text_editor/highlighting/line_number_color", Color::html("66aaaaaa"));
-	_initial_set("text_editor/highlighting/safe_line_number_color", Color::html("99aac8aa"));
-	_initial_set("text_editor/highlighting/caret_color", Color::html("aaaaaa"));
-	_initial_set("text_editor/highlighting/caret_background_color", Color::html("000000"));
-	_initial_set("text_editor/highlighting/text_selected_color", Color::html("000000"));
-	_initial_set("text_editor/highlighting/selection_color", Color::html("6ca9c2"));
+	_initial_set("text_editor/highlighting/symbol_color", Color(0.73, 0.87, 1.0));
+	_initial_set("text_editor/highlighting/keyword_color", Color(1.0, 1.0, 0.7));
+	_initial_set("text_editor/highlighting/base_type_color", Color(0.64, 1.0, 0.83));
+	_initial_set("text_editor/highlighting/engine_type_color", Color(0.51, 0.83, 1.0));
+	_initial_set("text_editor/highlighting/comment_color", Color(0.4, 0.4, 0.4));
+	_initial_set("text_editor/highlighting/string_color", Color(0.94, 0.43, 0.75));
+	_initial_set("text_editor/highlighting/background_color", dark_theme ? Color(0.0, 0.0, 0.0, 0.23) : Color(0.2, 0.23, 0.31));
+	_initial_set("text_editor/highlighting/completion_background_color", Color(0.17, 0.16, 0.2));
+	_initial_set("text_editor/highlighting/completion_selected_color", Color(0.26, 0.26, 0.27));
+	_initial_set("text_editor/highlighting/completion_existing_color", Color(0.13, 0.87, 0.87, 0.87));
+	_initial_set("text_editor/highlighting/completion_scroll_color", Color(1, 1, 1));
+	_initial_set("text_editor/highlighting/completion_font_color", Color(0.67, 0.67, 0.67));
+	_initial_set("text_editor/highlighting/text_color", Color(0.67, 0.67, 0.67));
+	_initial_set("text_editor/highlighting/line_number_color", Color(0.67, 0.67, 0.67, 0.4));
+	_initial_set("text_editor/highlighting/safe_line_number_color", Color(0.67, 0.78, 0.67, 0.6));
+	_initial_set("text_editor/highlighting/caret_color", Color(0.67, 0.67, 0.67));
+	_initial_set("text_editor/highlighting/caret_background_color", Color(0, 0, 0));
+	_initial_set("text_editor/highlighting/text_selected_color", Color(0, 0, 0));
+	_initial_set("text_editor/highlighting/selection_color", Color(0.41, 0.61, 0.91, 0.35));
 	_initial_set("text_editor/highlighting/brace_mismatch_color", Color(1, 0.2, 0.2));
 	_initial_set("text_editor/highlighting/current_line_color", Color(0.3, 0.5, 0.8, 0.15));
 	_initial_set("text_editor/highlighting/line_length_guideline_color", Color(0.3, 0.5, 0.8, 0.1));
 	_initial_set("text_editor/highlighting/word_highlighted_color", Color(0.8, 0.9, 0.9, 0.15));
-	_initial_set("text_editor/highlighting/number_color", Color::html("EB9532"));
-	_initial_set("text_editor/highlighting/function_color", Color::html("66a2ce"));
-	_initial_set("text_editor/highlighting/member_variable_color", Color::html("e64e59"));
+	_initial_set("text_editor/highlighting/number_color", Color(0.92, 0.58, 0.2));
+	_initial_set("text_editor/highlighting/function_color", Color(0.4, 0.64, 0.81));
+	_initial_set("text_editor/highlighting/member_variable_color", Color(0.9, 0.31, 0.35));
 	_initial_set("text_editor/highlighting/mark_color", Color(1.0, 0.4, 0.4, 0.4));
+	_initial_set("text_editor/highlighting/bookmark_color", Color(0.08, 0.49, 0.98));
 	_initial_set("text_editor/highlighting/breakpoint_color", Color(0.8, 0.8, 0.4, 0.2));
+	_initial_set("text_editor/highlighting/executing_line_color", Color(0.2, 0.8, 0.2, 0.4));
 	_initial_set("text_editor/highlighting/code_folding_color", Color(0.8, 0.8, 0.8, 0.8));
 	_initial_set("text_editor/highlighting/search_result_color", Color(0.05, 0.25, 0.05, 1));
-	_initial_set("text_editor/highlighting/search_result_border_color", Color(0.1, 0.45, 0.1, 1));
+	_initial_set("text_editor/highlighting/search_result_border_color", Color(0.41, 0.61, 0.91, 0.38));
 }
 
 bool EditorSettings::_save_text_editor_theme(String p_file) {
@@ -659,7 +688,7 @@ bool EditorSettings::_save_text_editor_theme(String p_file) {
 	keys.sort();
 
 	for (const List<String>::Element *E = keys.front(); E; E = E->next()) {
-		String key = E->get();
+		const String &key = E->get();
 		if (key.begins_with("text_editor/highlighting/") && key.find("color") >= 0) {
 			cf->set_value(theme_section, key.replace("text_editor/highlighting/", ""), ((Color)props[key].variant).to_html());
 		}
@@ -667,23 +696,24 @@ bool EditorSettings::_save_text_editor_theme(String p_file) {
 
 	Error err = cf->save(p_file);
 
-	if (err == OK) {
-		return true;
-	}
-	return false;
+	return err == OK;
+}
+
+bool EditorSettings::_is_default_text_editor_theme(String p_theme_name) {
+	return p_theme_name == "default" || p_theme_name == "adaptive" || p_theme_name == "custom";
 }
 
 static Dictionary _get_builtin_script_templates() {
 	Dictionary templates;
 
-	//No Comments
+	// No Comments
 	templates["no_comments.gd"] =
 			"extends %BASE%\n"
 			"\n"
-			"func _ready():\n"
+			"func _ready()%VOID_RETURN%:\n"
 			"%TS%pass\n";
 
-	//Empty
+	// Empty
 	templates["empty.gd"] =
 			"extends %BASE%"
 			"\n"
@@ -743,10 +773,16 @@ void EditorSettings::create() {
 
 	if (d->file_exists(exe_path + "/._sc_")) {
 		self_contained = true;
-		extra_config->load(exe_path + "/._sc_");
+		Error err = extra_config->load(exe_path + "/._sc_");
+		if (err != OK) {
+			ERR_PRINTS("Can't load config from path: " + exe_path + "/._sc_");
+		}
 	} else if (d->file_exists(exe_path + "/_sc_")) {
 		self_contained = true;
-		extra_config->load(exe_path + "/_sc_");
+		Error err = extra_config->load(exe_path + "/_sc_");
+		if (err != OK) {
+			ERR_PRINTS("Can't load config from path: " + exe_path + "/_sc_");
+		}
 	}
 	memdelete(d);
 
@@ -833,6 +869,13 @@ void EditorSettings::create() {
 		} else {
 			dir->change_dir("..");
 		}
+
+		if (dir->change_dir("feature_profiles") != OK) {
+			dir->make_dir("feature_profiles");
+		} else {
+			dir->change_dir("..");
+		}
+
 		_create_script_templates(dir->get_current_dir().plus_file("script_templates"));
 
 		if (dir->change_dir("projects") != OK) {
@@ -897,7 +940,7 @@ fail:
 		Vector<String> list = extra_config->get_value("init_projects", "list");
 		for (int i = 0; i < list.size(); i++) {
 
-			list.write[i] = exe_path + "/" + list[i];
+			list.write[i] = exe_path.plus_file(list[i]);
 		};
 		extra_config->set_value("init_projects", "list", list);
 	};
@@ -961,6 +1004,9 @@ void EditorSettings::setup_network() {
 
 		// link-local IPv6 addresses don't work, skipping them
 		if (ip.begins_with("fe80:0:0:0:")) // fe80::/64
+			continue;
+		// Same goes for IPv4 link-local (APIPA) addresses.
+		if (ip.begins_with("169.254.")) // 169.254.0.0/16
 			continue;
 		if (ip == current)
 			lip = current; //so it saves
@@ -1087,7 +1133,7 @@ Variant _EDITOR_DEF(const String &p_setting, const Variant &p_default, bool p_re
 
 Variant _EDITOR_GET(const String &p_setting) {
 
-	ERR_FAIL_COND_V(!EditorSettings::get_singleton()->has_setting(p_setting), Variant())
+	ERR_FAIL_COND_V(!EditorSettings::get_singleton()->has_setting(p_setting), Variant());
 	return EditorSettings::get_singleton()->get(p_setting);
 }
 
@@ -1158,14 +1204,22 @@ String EditorSettings::get_cache_dir() const {
 	return cache_dir;
 }
 
+String EditorSettings::get_feature_profiles_dir() const {
+
+	return get_settings_dir().plus_file("feature_profiles");
+}
+
 // Metadata
 
 void EditorSettings::set_project_metadata(const String &p_section, const String &p_key, Variant p_data) {
 	Ref<ConfigFile> cf = memnew(ConfigFile);
 	String path = get_project_settings_dir().plus_file("project_metadata.cfg");
-	cf->load(path);
+	Error err;
+	err = cf->load(path);
+	ERR_FAIL_COND(err != OK);
 	cf->set_value(p_section, p_key, p_data);
-	cf->save(path);
+	err = cf->save(path);
+	ERR_FAIL_COND(err != OK);
 }
 
 Variant EditorSettings::get_project_metadata(const String &p_section, const String &p_key, Variant p_default) const {
@@ -1250,7 +1304,7 @@ void EditorSettings::list_text_editor_themes() {
 		d->list_dir_begin();
 		String file = d->get_next();
 		while (file != String()) {
-			if (file.get_extension() == "tet" && file.get_basename().to_lower() != "default" && file.get_basename().to_lower() != "adaptive" && file.get_basename().to_lower() != "custom") {
+			if (file.get_extension() == "tet" && !_is_default_text_editor_theme(file.get_basename().to_lower())) {
 				custom_themes.push_back(file.get_basename());
 			}
 			file = d->get_next();
@@ -1267,14 +1321,16 @@ void EditorSettings::list_text_editor_themes() {
 }
 
 void EditorSettings::load_text_editor_theme() {
-	if (get("text_editor/theme/color_theme") == "Default" || get("text_editor/theme/color_theme") == "Adaptive" || get("text_editor/theme/color_theme") == "Custom") {
-		if (get("text_editor/theme/color_theme") == "Default") {
+	String p_file = get("text_editor/theme/color_theme");
+
+	if (_is_default_text_editor_theme(p_file.get_file().to_lower())) {
+		if (p_file == "Default") {
 			_load_default_text_editor_theme();
 		}
 		return; // sorry for "Settings changed" console spam
 	}
 
-	String theme_path = get_text_editor_themes_dir().plus_file((String)get("text_editor/theme/color_theme") + ".tet");
+	String theme_path = get_text_editor_themes_dir().plus_file(p_file + ".tet");
 
 	Ref<ConfigFile> cf = memnew(ConfigFile);
 	Error err = cf->load(theme_path);
@@ -1326,7 +1382,7 @@ bool EditorSettings::save_text_editor_theme() {
 
 	String p_file = get("text_editor/theme/color_theme");
 
-	if (p_file.get_file().to_lower() == "default" || p_file.get_file().to_lower() == "adaptive" || p_file.get_file().to_lower() == "custom") {
+	if (_is_default_text_editor_theme(p_file.get_file().to_lower())) {
 		return false;
 	}
 	String theme_path = get_text_editor_themes_dir().plus_file(p_file + ".tet");
@@ -1338,7 +1394,7 @@ bool EditorSettings::save_text_editor_theme_as(String p_file) {
 		p_file += ".tet";
 	}
 
-	if (p_file.get_file().to_lower() == "default.tet" || p_file.get_file().to_lower() == "adaptive.tet" || p_file.get_file().to_lower() == "custom.tet") {
+	if (_is_default_text_editor_theme(p_file.get_file().to_lower().trim_suffix(".tet"))) {
 		return false;
 	}
 	if (_save_text_editor_theme(p_file)) {
@@ -1354,6 +1410,11 @@ bool EditorSettings::save_text_editor_theme_as(String p_file) {
 		return true;
 	}
 	return false;
+}
+
+bool EditorSettings::is_default_text_editor_theme() {
+	String p_file = get("text_editor/theme/color_theme");
+	return _is_default_text_editor_theme(p_file.get_file().to_lower());
 }
 
 Vector<String> EditorSettings::get_script_templates(const String &p_extension) {
@@ -1417,6 +1478,10 @@ void EditorSettings::get_shortcut_list(List<String> *r_shortcuts) {
 
 Ref<ShortCut> ED_GET_SHORTCUT(const String &p_path) {
 
+	if (!EditorSettings::get_singleton()) {
+		return NULL;
+	}
+
 	Ref<ShortCut> sc = EditorSettings::get_singleton()->get_shortcut(p_path);
 	if (!sc.is_valid()) {
 		ERR_EXPLAIN("Used ED_GET_SHORTCUT with invalid shortcut: " + p_path);
@@ -1450,6 +1515,15 @@ Ref<ShortCut> ED_SHORTCUT(const String &p_path, const String &p_name, uint32_t p
 		ie->set_alt(bool(p_keycode & KEY_MASK_ALT));
 		ie->set_control(bool(p_keycode & KEY_MASK_CTRL));
 		ie->set_metakey(bool(p_keycode & KEY_MASK_META));
+	}
+
+	if (!EditorSettings::get_singleton()) {
+		Ref<ShortCut> sc;
+		sc.instance();
+		sc->set_name(p_name);
+		sc->set_shortcut(ie);
+		sc->set_meta("original", ie);
+		return sc;
 	}
 
 	Ref<ShortCut> sc = EditorSettings::get_singleton()->get_shortcut(p_path);
@@ -1510,6 +1584,8 @@ void EditorSettings::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_recent_dirs"), &EditorSettings::get_recent_dirs);
 
 	ADD_SIGNAL(MethodInfo("settings_changed"));
+
+	BIND_CONSTANT(NOTIFICATION_EDITOR_SETTINGS_CHANGED);
 }
 
 EditorSettings::EditorSettings() {

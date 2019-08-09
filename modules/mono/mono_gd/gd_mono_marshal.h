@@ -32,6 +32,7 @@
 #define GDMONOMARSHAL_H
 
 #include "core/variant.h"
+
 #include "gd_mono.h"
 #include "gd_mono_utils.h"
 
@@ -57,6 +58,9 @@ T unbox(MonoObject *p_obj) {
 #define BOX_ENUM(m_enum_class, x) mono_value_box(mono_domain_get(), m_enum_class, &x)
 
 Variant::Type managed_to_variant_type(const ManagedType &p_type);
+
+bool try_get_array_element_type(const ManagedType &p_array_type, ManagedType &r_elem_type);
+bool try_get_dictionary_key_value_types(const ManagedType &p_dictionary_type, ManagedType &r_key_type, ManagedType &r_value_type);
 
 // String
 

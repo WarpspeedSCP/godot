@@ -42,7 +42,7 @@
 
 class EditorProfiler : public VBoxContainer {
 
-	GDCLASS(EditorProfiler, VBoxContainer)
+	GDCLASS(EditorProfiler, VBoxContainer);
 
 public:
 	struct Metric {
@@ -168,6 +168,8 @@ public:
 	void disable_seeking();
 
 	void clear();
+
+	Vector<Vector<String> > get_data_as_csv() const;
 
 	EditorProfiler();
 };

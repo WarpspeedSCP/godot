@@ -196,7 +196,8 @@ void BodySW::set_param(PhysicsServer::BodyParameter p_param, real_t p_value) {
 
 			angular_damp = p_value;
 		} break;
-		default: {}
+		default: {
+		}
 	}
 }
 
@@ -226,7 +227,8 @@ real_t BodySW::get_param(PhysicsServer::BodyParameter p_param) const {
 			return angular_damp;
 		} break;
 
-		default: {}
+		default: {
+		}
 	}
 
 	return 0;
@@ -344,8 +346,7 @@ void BodySW::set_state(PhysicsServer::BodyState p_state, const Variant &p_varian
 				//biased_angular_velocity=Vector3();
 				set_active(false);
 			} else {
-				if (mode != PhysicsServer::BODY_MODE_STATIC)
-					set_active(true);
+				set_active(true);
 			}
 		} break;
 		case PhysicsServer::BODY_STATE_CAN_SLEEP: {
@@ -474,7 +475,8 @@ void BodySW::integrate_forces(real_t p_step) {
 					_compute_area_gravity_and_dampenings(aa[i].area);
 					stopped = mode == PhysicsServer::AREA_SPACE_OVERRIDE_REPLACE;
 				} break;
-				default: {}
+				default: {
+				}
 			}
 		}
 	}

@@ -208,7 +208,8 @@ void FileAccessCompressed::seek(size_t p_position) {
 		if (p_position == read_total) {
 			at_end = true;
 		} else {
-
+			at_end = false;
+			read_eof = false;
 			int block_idx = p_position / block_size;
 			if (block_idx != read_block) {
 
@@ -371,6 +372,19 @@ uint64_t FileAccessCompressed::_get_modified_time(const String &p_file) {
 		return f->get_modified_time(p_file);
 	else
 		return 0;
+}
+
+uint32_t FileAccessCompressed::_get_unix_permissions(const String &p_file) {
+	if (f)
+		return f->_get_unix_permissions(p_file);
+	return 0;
+}
+
+Error FileAccessCompressed::_set_unix_permissions(const String &p_file, uint32_t p_permissions) {
+	if (f) {
+		return f->_set_unix_permissions(p_file, p_permissions);
+	}
+	return FAILED;
 }
 
 FileAccessCompressed::FileAccessCompressed() :

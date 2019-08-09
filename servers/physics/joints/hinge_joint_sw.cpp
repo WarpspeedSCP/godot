@@ -167,10 +167,10 @@ bool HingeJointSW::setup(real_t p_step) {
 		Vector3 relPos = pivotBInW - pivotAInW;
 
 		Vector3 normal[3];
-		if (relPos.length_squared() > CMP_EPSILON) {
-			normal[0] = relPos.normalized();
-		} else {
+		if (Math::is_zero_approx(relPos.length_squared())) {
 			normal[0] = Vector3(real_t(1.0), 0, 0);
+		} else {
+			normal[0] = relPos.normalized();
 		}
 
 		plane_space(normal[0], normal[1], normal[2]);
@@ -198,7 +198,6 @@ bool HingeJointSW::setup(real_t p_step) {
 
 	plane_space(m_rbAFrame.basis.get_axis(2), jointAxis0local, jointAxis1local);
 
-	A->get_transform().basis.xform(m_rbAFrame.basis.get_axis(2));
 	Vector3 jointAxis0 = A->get_transform().basis.xform(jointAxis0local);
 	Vector3 jointAxis1 = A->get_transform().basis.xform(jointAxis1local);
 	Vector3 hingeAxisWorld = A->get_transform().basis.xform(m_rbAFrame.basis.get_axis(2));

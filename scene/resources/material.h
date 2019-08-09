@@ -43,7 +43,7 @@
 
 class Material : public Resource {
 
-	GDCLASS(Material, Resource)
+	GDCLASS(Material, Resource);
 	RES_BASE_EXTENSION("material")
 	OBJ_SAVE_TYPE(Material)
 
@@ -111,7 +111,7 @@ public:
 
 class SpatialMaterial : public Material {
 
-	GDCLASS(SpatialMaterial, Material)
+	GDCLASS(SpatialMaterial, Material);
 
 public:
 	enum TextureParam {
@@ -196,6 +196,7 @@ public:
 		FLAG_DONT_RECEIVE_SHADOWS,
 		FLAG_ENSURE_CORRECT_NORMALS,
 		FLAG_DISABLE_AMBIENT_LIGHT,
+		FLAG_USE_SHADOW_TO_OPACITY,
 		FLAG_MAX
 	};
 

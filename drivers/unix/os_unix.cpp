@@ -108,6 +108,7 @@ void OS_Unix::initialize_debugging() {
 
 	if (ScriptDebugger::get_singleton() != NULL) {
 		struct sigaction action;
+		memset(&action, 0, sizeof(action));
 		action.sa_handler = handle_interrupt;
 		sigaction(SIGINT, &action, NULL);
 	}
@@ -116,15 +117,6 @@ void OS_Unix::initialize_debugging() {
 int OS_Unix::unix_initialize_audio(int p_audio_driver) {
 
 	return 0;
-}
-
-// Very simple signal handler to reap processes where ::execute was called with
-// !p_blocking
-void handle_sigchld(int sig) {
-	int saved_errno = errno;
-	while (waitpid((pid_t)(-1), 0, WNOHANG) > 0) {
-	}
-	errno = saved_errno;
 }
 
 void OS_Unix::initialize_core() {
@@ -154,14 +146,6 @@ void OS_Unix::initialize_core() {
 #endif
 
 	_setup_clock();
-
-	struct sigaction sa;
-	sa.sa_handler = &handle_sigchld;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
-	if (sigaction(SIGCHLD, &sa, 0) == -1) {
-		perror("ERROR sigaction() failed:");
-	}
 }
 
 void OS_Unix::finalize_core() {
@@ -186,7 +170,7 @@ String OS_Unix::get_stdin_string(bool p_block) {
 	return "";
 }
 
-String OS_Unix::get_name() {
+String OS_Unix::get_name() const {
 
 	return "Unix";
 }
@@ -272,7 +256,7 @@ OS::TimeZoneInfo OS_Unix::get_time_zone_info() const {
 
 void OS_Unix::delay_usec(uint32_t p_usec) const {
 
-	struct timespec rem = { static_cast<time_t>(p_usec / 1000000), static_cast<long>((p_usec % 1000000) * 1000) };
+	struct timespec rem = { static_cast<time_t>(p_usec / 1000000), (static_cast<long>(p_usec) % 1000000) * 1000 };
 	while (nanosleep(&rem, &rem) == EINTR) {
 	}
 }
@@ -292,7 +276,7 @@ uint64_t OS_Unix::get_ticks_usec() const {
 	return longtime;
 }
 
-Error OS_Unix::execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id, String *r_pipe, int *r_exitcode, bool read_stderr) {
+Error OS_Unix::execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id, String *r_pipe, int *r_exitcode, bool read_stderr, Mutex *p_pipe_mutex) {
 
 #ifdef __EMSCRIPTEN__
 	// Don't compile this code at all to avoid undefined references.
@@ -319,11 +303,17 @@ Error OS_Unix::execute(const String &p_path, const List<String> &p_arguments, bo
 		ERR_FAIL_COND_V(!f, ERR_CANT_OPEN);
 
 		char buf[65535];
+
 		while (fgets(buf, 65535, f)) {
 
+			if (p_pipe_mutex) {
+				p_pipe_mutex->lock();
+			}
 			(*r_pipe) += buf;
+			if (p_pipe_mutex) {
+				p_pipe_mutex->unlock();
+			}
 		}
-
 		int rv = pclose(f);
 		if (r_exitcode)
 			*r_exitcode = rv;
@@ -336,6 +326,13 @@ Error OS_Unix::execute(const String &p_path, const List<String> &p_arguments, bo
 
 	if (pid == 0) {
 		// is child
+
+		if (!p_blocking) {
+			// For non blocking calls, create a new session-ID so parent won't wait for it.
+			// This ensures the process won't go zombie at end.
+			setsid();
+		}
+
 		Vector<CharString> cs;
 		cs.push_back(p_path.utf8());
 		for (int i = 0; i < p_arguments.size(); i++)
@@ -358,6 +355,7 @@ Error OS_Unix::execute(const String &p_path, const List<String> &p_arguments, bo
 		waitpid(pid, &status, 0);
 		if (r_exitcode)
 			*r_exitcode = WEXITSTATUS(status);
+
 	} else {
 
 		if (r_child_id)

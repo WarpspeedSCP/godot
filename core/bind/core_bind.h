@@ -85,7 +85,7 @@ public:
 
 	static _ResourceSaver *get_singleton() { return singleton; }
 
-	Error save(const String &p_path, const RES &p_resource, uint32_t p_flags);
+	Error save(const String &p_path, const RES &p_resource, SaverFlags p_flags);
 	PoolVector<String> get_recognized_extensions(const RES &p_resource);
 
 	_ResourceSaver();
@@ -175,9 +175,13 @@ public:
 	virtual int get_screen_dpi(int p_screen = -1) const;
 	virtual Point2 get_window_position() const;
 	virtual void set_window_position(const Point2 &p_position);
+	virtual Size2 get_max_window_size() const;
+	virtual Size2 get_min_window_size() const;
 	virtual Size2 get_window_size() const;
 	virtual Size2 get_real_window_size() const;
 	virtual Rect2 get_window_safe_area() const;
+	virtual void set_max_window_size(const Size2 &p_size);
+	virtual void set_min_window_size(const Size2 &p_size);
 	virtual void set_window_size(const Size2 &p_size);
 	virtual void set_window_fullscreen(bool p_enabled);
 	virtual bool is_window_fullscreen() const;
@@ -214,7 +218,7 @@ public:
 	bool is_in_low_processor_usage_mode() const;
 
 	String get_executable_path() const;
-	int execute(const String &p_path, const Vector<String> &p_arguments, bool p_blocking, Array p_output = Array());
+	int execute(const String &p_path, const Vector<String> &p_arguments, bool p_blocking, Array p_output = Array(), bool p_read_stderr = false);
 
 	Error kill(int p_pid);
 	Error shell_open(String p_uri);
@@ -275,6 +279,7 @@ public:
 
 	void set_use_file_access_save_and_swap(bool p_enable);
 
+	void set_native_icon(const String &p_filename);
 	void set_icon(const Ref<Image> &p_icon);
 
 	int get_exit_code() const;
@@ -402,14 +407,55 @@ public:
 	real_t segment_intersects_circle(const Vector2 &p_from, const Vector2 &p_to, const Vector2 &p_circle_pos, real_t p_circle_radius);
 	int get_uv84_normal_bit(const Vector3 &p_vector);
 
+	bool is_polygon_clockwise(const Vector<Vector2> &p_polygon);
+	bool is_point_in_polygon(const Point2 &p_point, const Vector<Vector2> &p_polygon);
 	Vector<int> triangulate_polygon(const Vector<Vector2> &p_polygon);
+	Vector<int> triangulate_delaunay_2d(const Vector<Vector2> &p_points);
 	Vector<Point2> convex_hull_2d(const Vector<Point2> &p_points);
 	Vector<Vector3> clip_polygon(const Vector<Vector3> &p_points, const Plane &p_plane);
+
+	enum PolyBooleanOperation {
+		OPERATION_UNION,
+		OPERATION_DIFFERENCE,
+		OPERATION_INTERSECTION,
+		OPERATION_XOR
+	};
+	// 2D polygon boolean operations
+	Array merge_polygons_2d(const Vector<Vector2> &p_polygon_a, const Vector<Vector2> &p_polygon_b); // union (add)
+	Array clip_polygons_2d(const Vector<Vector2> &p_polygon_a, const Vector<Vector2> &p_polygon_b); // difference (subtract)
+	Array intersect_polygons_2d(const Vector<Vector2> &p_polygon_a, const Vector<Vector2> &p_polygon_b); // common area (multiply)
+	Array exclude_polygons_2d(const Vector<Vector2> &p_polygon_a, const Vector<Vector2> &p_polygon_b); // all but common area (xor)
+
+	// 2D polyline vs polygon operations
+	Array clip_polyline_with_polygon_2d(const Vector<Vector2> &p_polyline, const Vector<Vector2> &p_polygon); // cut
+	Array intersect_polyline_with_polygon_2d(const Vector<Vector2> &p_polyline, const Vector<Vector2> &p_polygon); // chop
+
+	// 2D offset polygons/polylines
+	enum PolyJoinType {
+		JOIN_SQUARE,
+		JOIN_ROUND,
+		JOIN_MITER
+	};
+	enum PolyEndType {
+		END_POLYGON,
+		END_JOINED,
+		END_BUTT,
+		END_SQUARE,
+		END_ROUND
+	};
+	Array offset_polygon_2d(const Vector<Vector2> &p_polygon, real_t p_delta, PolyJoinType p_join_type = JOIN_SQUARE);
+	Array offset_polyline_2d(const Vector<Vector2> &p_polygon, real_t p_delta, PolyJoinType p_join_type = JOIN_SQUARE, PolyEndType p_end_type = END_SQUARE);
+
+	Vector<Point2> transform_points_2d(const Vector<Point2> &p_points, const Transform2D &p_mat);
 
 	Dictionary make_atlas(const Vector<Size2> &p_rects);
 
 	_Geometry();
 };
+
+VARIANT_ENUM_CAST(_Geometry::PolyBooleanOperation);
+VARIANT_ENUM_CAST(_Geometry::PolyJoinType);
+VARIANT_ENUM_CAST(_Geometry::PolyEndType);
 
 class _File : public Reference {
 
@@ -436,11 +482,11 @@ public:
 		COMPRESSION_GZIP = Compression::MODE_GZIP
 	};
 
-	Error open_encrypted(const String &p_path, int p_mode_flags, const Vector<uint8_t> &p_key);
-	Error open_encrypted_pass(const String &p_path, int p_mode_flags, const String &p_pass);
-	Error open_compressed(const String &p_path, int p_mode_flags, int p_compress_mode = 0);
+	Error open_encrypted(const String &p_path, ModeFlags p_mode_flags, const Vector<uint8_t> &p_key);
+	Error open_encrypted_pass(const String &p_path, ModeFlags p_mode_flags, const String &p_pass);
+	Error open_compressed(const String &p_path, ModeFlags p_mode_flags, CompressionMode p_compress_mode = COMPRESSION_FASTLZ);
 
-	Error open(const String &p_path, int p_mode_flags); ///< open a file
+	Error open(const String &p_path, ModeFlags p_mode_flags); ///< open a file
 	void close(); ///< close a file
 	bool is_open() const; ///< true when file is open
 
@@ -632,10 +678,11 @@ public:
 
 		PRIORITY_LOW,
 		PRIORITY_NORMAL,
-		PRIORITY_HIGH
+		PRIORITY_HIGH,
+		PRIORITY_MAX
 	};
 
-	Error start(Object *p_instance, const StringName &p_method, const Variant &p_userdata = Variant(), int p_priority = PRIORITY_NORMAL);
+	Error start(Object *p_instance, const StringName &p_method, const Variant &p_userdata = Variant(), Priority p_priority = PRIORITY_NORMAL);
 	String get_id() const;
 	bool is_active() const;
 	Variant wait_to_finish();
@@ -648,7 +695,7 @@ VARIANT_ENUM_CAST(_Thread::Priority);
 
 class _ClassDB : public Object {
 
-	GDCLASS(_ClassDB, Object)
+	GDCLASS(_ClassDB, Object);
 
 protected:
 	static void _bind_methods();
@@ -699,6 +746,7 @@ public:
 
 	void set_physics_jitter_fix(float p_threshold);
 	float get_physics_jitter_fix() const;
+	float get_physics_interpolation_fraction() const;
 
 	void set_target_fps(int p_fps);
 	int get_target_fps() const;
@@ -733,7 +781,7 @@ public:
 class _JSON;
 
 class JSONParseResult : public Reference {
-	GDCLASS(JSONParseResult, Reference)
+	GDCLASS(JSONParseResult, Reference);
 
 	friend class _JSON;
 
@@ -758,10 +806,13 @@ public:
 
 	void set_result(const Variant &p_result);
 	Variant get_result() const;
+
+	JSONParseResult() :
+			error_line(-1) {}
 };
 
 class _JSON : public Object {
-	GDCLASS(_JSON, Object)
+	GDCLASS(_JSON, Object);
 
 protected:
 	static void _bind_methods();

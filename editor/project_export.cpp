@@ -88,14 +88,7 @@ void ProjectExportDialog::popup_export() {
 	if (saved_size != Rect2()) {
 		popup(saved_size);
 	} else {
-
-		Size2 popup_size = Size2(900, 700) * editor_get_scale();
-		Size2 window_size = get_viewport_rect().size;
-
-		popup_size.x = MIN(window_size.x * 0.8, popup_size.x);
-		popup_size.y = MIN(window_size.y * 0.8, popup_size.y);
-
-		popup_centered(popup_size);
+		popup_centered_clamped(Size2(900, 700) * EDSCALE, 0.8);
 	}
 }
 
@@ -173,7 +166,7 @@ void ProjectExportDialog::_update_presets() {
 
 void ProjectExportDialog::_update_export_all() {
 
-	bool can_export = EditorExport::get_singleton()->get_export_preset_count() > 0 ? true : false;
+	bool can_export = EditorExport::get_singleton()->get_export_preset_count() > 0;
 
 	for (int i = 0; i < EditorExport::get_singleton()->get_export_preset_count(); i++) {
 		Ref<EditorExportPreset> preset = EditorExport::get_singleton()->get_export_preset(i);
@@ -571,9 +564,8 @@ void ProjectExportDialog::_duplicate_preset() {
 	Ref<EditorExportPreset> preset = current->get_platform()->create_preset();
 	ERR_FAIL_COND(!preset.is_valid());
 
-	String name = current->get_name() + "" + itos(1);
+	String name = current->get_name() + " (copy)";
 	bool make_runnable = true;
-	int attempt = 2;
 	while (true) {
 
 		bool valid = true;
@@ -592,8 +584,7 @@ void ProjectExportDialog::_duplicate_preset() {
 		if (valid)
 			break;
 
-		attempt++;
-		name = current->get_name() + " " + itos(attempt);
+		name += " (copy)";
 	}
 
 	preset->set_name(name);
@@ -631,6 +622,7 @@ void ProjectExportDialog::_delete_preset_confirm() {
 
 	int idx = presets->get_current();
 	_edit_preset(-1);
+	export_button->set_disabled(true);
 	EditorExport::get_singleton()->remove_export_preset(idx);
 	_update_presets();
 }
@@ -931,7 +923,7 @@ void ProjectExportDialog::_export_project() {
 	Ref<EditorExportPlatform> platform = current->get_platform();
 	ERR_FAIL_COND(platform.is_null());
 
-	export_project->set_access(FileDialog::ACCESS_FILESYSTEM);
+	export_project->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
 	export_project->clear_filters();
 
 	List<String> extension_list = platform->get_binary_extensions(current);
@@ -939,8 +931,17 @@ void ProjectExportDialog::_export_project() {
 		export_project->add_filter("*." + extension_list[i] + " ; " + platform->get_name() + " Export");
 	}
 
-	if (current->get_export_path() != "") {
-		export_project->set_current_path(current->get_export_path());
+	String current_preset_export_path = current->get_export_path();
+
+	if (current_preset_export_path != "") {
+
+		if (!DirAccess::exists(current_preset_export_path.get_base_dir())) {
+
+			DirAccessRef da(DirAccess::create(DirAccess::ACCESS_FILESYSTEM));
+			da->make_dir_recursive(current_preset_export_path.get_base_dir());
+		}
+
+		export_project->set_current_path(current_preset_export_path);
 	} else {
 		if (extension_list.size() >= 1) {
 			export_project->set_current_file(default_filename + "." + extension_list[0]);
@@ -955,7 +956,7 @@ void ProjectExportDialog::_export_project() {
 		export_project->get_line_edit()->connect("text_entered", export_project, "_file_entered");
 	}
 
-	export_project->set_mode(FileDialog::MODE_SAVE_FILE);
+	export_project->set_mode(EditorFileDialog::MODE_SAVE_FILE);
 	export_project->popup_centered_ratio();
 }
 
@@ -971,7 +972,7 @@ void ProjectExportDialog::_export_project_to_path(const String &p_path) {
 	current->set_export_path(p_path);
 
 	Error err = platform->export_project(current, export_debug->is_pressed(), p_path, 0);
-	if (err != OK) {
+	if (err != OK && err != ERR_SKIP) {
 		if (err == ERR_FILE_NOT_FOUND) {
 			error_dialog->set_text(vformat(TTR("Failed to export the project for platform '%s'.\nExport templates seem to be missing or invalid."), platform->get_name()));
 		} else { // Assume misconfiguration. FIXME: Improve error handling and preset config validation.
@@ -994,13 +995,13 @@ void ProjectExportDialog::_export_all_dialog_action(const String &p_str) {
 
 	export_all_dialog->hide();
 
-	_export_all(p_str == "release" ? false : true);
+	_export_all(p_str != "release");
 }
 
 void ProjectExportDialog::_export_all(bool p_debug) {
 
 	String mode = p_debug ? TTR("Debug") : TTR("Release");
-	EditorProgress ep("exportall", TTR("Exporting All") + " " + mode, EditorExport::get_singleton()->get_export_preset_count());
+	EditorProgress ep("exportall", TTR("Exporting All") + " " + mode, EditorExport::get_singleton()->get_export_preset_count(), true);
 
 	for (int i = 0; i < EditorExport::get_singleton()->get_export_preset_count(); i++) {
 		Ref<EditorExportPreset> preset = EditorExport::get_singleton()->get_export_preset(i);
@@ -1011,7 +1012,7 @@ void ProjectExportDialog::_export_all(bool p_debug) {
 		ep.step(preset->get_name(), i);
 
 		Error err = platform->export_project(preset, p_debug, preset->get_export_path(), 0);
-		if (err != OK) {
+		if (err != OK && err != ERR_SKIP) {
 			if (err == ERR_FILE_BAD_PATH) {
 				error_dialog->set_text(TTR("The given export path doesn't exist:") + "\n" + preset->get_export_path().get_base_dir());
 			} else {
@@ -1184,9 +1185,9 @@ ProjectExportDialog::ProjectExportDialog() {
 	patches_hb->add_child(patch_export);
 	patches_hb->add_spacer();
 
-	patch_dialog = memnew(FileDialog);
+	patch_dialog = memnew(EditorFileDialog);
 	patch_dialog->add_filter("*.pck ; Pack File");
-	patch_dialog->set_mode(FileDialog::MODE_OPEN_FILE);
+	patch_dialog->set_mode(EditorFileDialog::MODE_OPEN_FILE);
 	patch_dialog->connect("file_selected", this, "_patch_selected");
 	add_child(patch_dialog);
 
@@ -1266,11 +1267,11 @@ ProjectExportDialog::ProjectExportDialog() {
 	export_all_button->connect("pressed", this, "_export_all_dialog");
 	export_all_button->set_disabled(true);
 
-	export_pck_zip = memnew(FileDialog);
+	export_pck_zip = memnew(EditorFileDialog);
 	export_pck_zip->add_filter("*.zip ; ZIP File");
 	export_pck_zip->add_filter("*.pck ; Godot Game Pack");
-	export_pck_zip->set_access(FileDialog::ACCESS_FILESYSTEM);
-	export_pck_zip->set_mode(FileDialog::MODE_SAVE_FILE);
+	export_pck_zip->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
+	export_pck_zip->set_mode(EditorFileDialog::MODE_SAVE_FILE);
 	add_child(export_pck_zip);
 	export_pck_zip->connect("file_selected", this, "_export_pck_zip_selected");
 
@@ -1300,8 +1301,8 @@ ProjectExportDialog::ProjectExportDialog() {
 	export_templates_error->add_child(download_templates);
 	download_templates->connect("pressed", this, "_open_export_template_manager");
 
-	export_project = memnew(FileDialog);
-	export_project->set_access(FileDialog::ACCESS_FILESYSTEM);
+	export_project = memnew(EditorFileDialog);
+	export_project->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
 	add_child(export_project);
 	export_project->connect("file_selected", this, "_export_project_to_path");
 	export_project->get_line_edit()->connect("text_changed", this, "_validate_export_path");

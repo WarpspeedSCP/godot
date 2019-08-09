@@ -8,12 +8,10 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 	</methods>
 	<members>
-		<member name="points" type="PoolVector3Array" setter="set_points" getter="get_points">
+		<member name="points" type="PoolVector3Array" setter="set_points" getter="get_points" default="PoolVector3Array(  )">
 			The list of 3D points forming the convex polygon shape.
 		</member>
 	</members>

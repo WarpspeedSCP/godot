@@ -173,6 +173,11 @@ public:
 	virtual void call_multilevel(const StringName &p_method, const Variant **p_args, int p_argcount);
 	virtual void call_multilevel_reversed(const StringName &p_method, const Variant **p_args, int p_argcount);
 	virtual void notification(int p_notification) = 0;
+	virtual String to_string(bool *r_valid) {
+		if (r_valid)
+			*r_valid = false;
+		return String();
+	}
 
 	//this is used by script languages that keep a reference counter of their own
 	//you can make make Ref<> not die when it reaches zero, so deleting the reference
@@ -193,6 +198,35 @@ public:
 
 	virtual ScriptLanguage *get_language() = 0;
 	virtual ~ScriptInstance();
+};
+
+struct ScriptCodeCompletionOption {
+	enum Kind {
+		KIND_CLASS,
+		KIND_FUNCTION,
+		KIND_SIGNAL,
+		KIND_VARIABLE,
+		KIND_MEMBER,
+		KIND_ENUM,
+		KIND_CONSTANT,
+		KIND_NODE_PATH,
+		KIND_FILE_PATH,
+		KIND_PLAIN_TEXT,
+	};
+	Kind kind;
+	String display;
+	String insert_text;
+	RES icon;
+
+	ScriptCodeCompletionOption() {
+		kind = KIND_PLAIN_TEXT;
+	}
+
+	ScriptCodeCompletionOption(const String &p_text, Kind p_kind) {
+		display = p_text;
+		insert_text = p_text;
+		kind = p_kind;
+	}
 };
 
 class ScriptCodeCompletionCache {
@@ -245,7 +279,7 @@ public:
 	virtual Error open_in_external_editor(const Ref<Script> &p_script, int p_line, int p_col) { return ERR_UNAVAILABLE; }
 	virtual bool overrides_external_editor() { return false; }
 
-	virtual Error complete_code(const String &p_code, const String &p_base_path, Object *p_owner, List<String> *r_options, bool &r_force, String &r_call_hint) { return ERR_UNAVAILABLE; }
+	virtual Error complete_code(const String &p_code, const String &p_path, Object *p_owner, List<ScriptCodeCompletionOption> *r_options, bool &r_force, String &r_call_hint) { return ERR_UNAVAILABLE; }
 
 	struct LookupResult {
 		enum Type {
@@ -264,7 +298,7 @@ public:
 		int location;
 	};
 
-	virtual Error lookup_code(const String &p_code, const String &p_symbol, const String &p_base_path, Object *p_owner, LookupResult &r_result) { return ERR_UNAVAILABLE; }
+	virtual Error lookup_code(const String &p_code, const String &p_symbol, const String &p_path, Object *p_owner, LookupResult &r_result) { return ERR_UNAVAILABLE; }
 
 	virtual void auto_indent_code(String &p_code, int p_from_line, int p_to_line) const = 0;
 	virtual void add_global_constant(const StringName &p_variable, const Variant &p_value) = 0;

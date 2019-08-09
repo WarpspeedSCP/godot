@@ -41,6 +41,10 @@
 #include "mono_gd/gd_mono_header.h"
 #include "mono_gd/gd_mono_internals.h"
 
+#ifdef TOOLS_ENABLED
+#include "editor/editor_plugin.h"
+#endif
+
 class CSharpScript;
 class CSharpInstance;
 class CSharpLanguage;
@@ -63,7 +67,7 @@ TScriptInstance *cast_script_instance(ScriptInstance *p_inst) {
 
 class CSharpScript : public Script {
 
-	GDCLASS(CSharpScript, Script)
+	GDCLASS(CSharpScript, Script);
 
 	friend class CSharpInstance;
 	friend class CSharpLanguage;
@@ -92,6 +96,8 @@ class CSharpScript : public Script {
 
 	Set<ObjectID> pending_reload_instances;
 	Map<ObjectID, StateBackup> pending_reload_state;
+	StringName tied_class_name_for_reload;
+	StringName tied_class_namespace_for_reload;
 #endif
 
 	String source;
@@ -115,6 +121,7 @@ class CSharpScript : public Script {
 	bool placeholder_fallback_enabled;
 	bool exports_invalidated;
 	void _update_exports_values(Map<StringName, Variant> &values, List<PropertyInfo> &propnames);
+	void _update_member_info_no_exports();
 	virtual void _placeholder_erased(PlaceHolderScriptInstance *p_placeholder);
 #endif
 
@@ -127,7 +134,8 @@ class CSharpScript : public Script {
 
 	bool _update_exports();
 #ifdef TOOLS_ENABLED
-	bool _get_member_export(GDMonoClass *p_class, IMonoClassMember *p_member, PropertyInfo &r_prop_info, bool &r_exported);
+	bool _get_member_export(IMonoClassMember *p_member, bool p_inspect_export, PropertyInfo &r_prop_info, bool &r_exported);
+	static int _try_get_member_export_hint(IMonoClassMember *p_member, ManagedType p_type, Variant::Type p_variant_type, bool p_allow_generics, PropertyHint &r_hint, String &r_hint_string);
 #endif
 
 	CSharpInstance *_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, bool p_isref, Variant::CallError &r_error);
@@ -136,6 +144,7 @@ class CSharpScript : public Script {
 	// Do not use unless you know what you are doing
 	friend void GDMonoInternals::tie_managed_to_unmanaged(MonoObject *, Object *);
 	static Ref<CSharpScript> create_for_managed_type(GDMonoClass *p_class, GDMonoClass *p_native);
+	static void initialize_for_managed_type(Ref<CSharpScript> p_script, GDMonoClass *p_class, GDMonoClass *p_native);
 
 protected:
 	static void _bind_methods();
@@ -225,6 +234,8 @@ class CSharpInstance : public ScriptInstance {
 
 	MultiplayerAPI::RPCMode _member_get_rpc_mode(IMonoClassMember *p_member) const;
 
+	void get_properties_state_for_reloading(List<Pair<StringName, Variant> > &r_state);
+
 public:
 	MonoObject *get_mono_object() const;
 
@@ -260,6 +271,8 @@ public:
 	virtual void notification(int p_notification);
 	void _call_notification(int p_notification);
 
+	virtual String to_string(bool *r_valid);
+
 	virtual Ref<Script> get_script() const;
 
 	virtual ScriptLanguage *get_language();
@@ -273,6 +286,7 @@ struct CSharpScriptBinding {
 	StringName type_name;
 	GDMonoClass *wrapper_class;
 	Ref<MonoGCHandle> gchandle;
+	Object *owner;
 };
 
 class CSharpLanguage : public ScriptLanguage {
@@ -298,9 +312,12 @@ class CSharpLanguage : public ScriptLanguage {
 		StringName _signal_callback;
 		StringName _set;
 		StringName _get;
+		StringName _get_property_list;
 		StringName _notification;
 		StringName _script_source;
 		StringName dotctor; // .ctor
+		StringName on_before_serialize; // OnBeforeSerialize
+		StringName on_after_deserialize; // OnAfterDeserialize
 
 		StringNameCache();
 	};
@@ -308,14 +325,23 @@ class CSharpLanguage : public ScriptLanguage {
 	int lang_idx;
 
 	Dictionary scripts_metadata;
+	bool scripts_metadata_invalidated;
 
 	// For debug_break and debug_break_parse
 	int _debug_parse_err_line;
 	String _debug_parse_err_file;
 	String _debug_error;
 
+	void _load_scripts_metadata();
+
 	friend class GDMono;
-	void _uninitialize_script_bindings();
+	void _on_scripts_domain_unloaded();
+
+#ifdef TOOLS_ENABLED
+	EditorPlugin *godotsharp_editor;
+
+	static void _editor_init_callback();
+#endif
 
 public:
 	StringNameCache string_names;
@@ -329,8 +355,12 @@ public:
 
 	_FORCE_INLINE_ static CSharpLanguage *get_singleton() { return singleton; }
 
+#ifdef TOOLS_ENABLED
+	_FORCE_INLINE_ EditorPlugin *get_godotsharp_editor() const { return godotsharp_editor; }
+#endif
+
 	static void release_script_gchandle(Ref<MonoGCHandle> &p_gchandle);
-	static void release_script_gchandle(MonoObject *p_pinned_expected_obj, Ref<MonoGCHandle> &p_gchandle);
+	static void release_script_gchandle(MonoObject *p_expected_obj, Ref<MonoGCHandle> &p_gchandle);
 
 	bool debug_break(const String &p_error, bool p_allow_continue = true);
 	bool debug_break_parse(const String &p_file, int p_line, const String &p_error);
@@ -340,9 +370,15 @@ public:
 	void reload_assemblies(bool p_soft_reload);
 #endif
 
-	void project_assembly_loaded();
+	_FORCE_INLINE_ Dictionary get_scripts_metadata_or_nothing() {
+		return scripts_metadata_invalidated ? Dictionary() : scripts_metadata;
+	}
 
-	_FORCE_INLINE_ const Dictionary &get_scripts_metadata() { return scripts_metadata; }
+	_FORCE_INLINE_ const Dictionary &get_scripts_metadata() {
+		if (scripts_metadata_invalidated)
+			_load_scripts_metadata();
+		return scripts_metadata;
+	}
 
 	virtual String get_name() const;
 
@@ -367,7 +403,6 @@ public:
 	virtual bool supports_builtin_mode() const;
 	/* TODO? */ virtual int find_function(const String &p_function, const String &p_code) const { return -1; }
 	virtual String make_function(const String &p_class, const String &p_name, const PoolStringArray &p_args) const;
-	/* TODO? */ Error complete_code(const String &p_code, const String &p_base_path, Object *p_owner, List<String> *r_options, String &r_call_hint) { return ERR_UNAVAILABLE; }
 	virtual String _get_indentation() const;
 	/* TODO? */ virtual void auto_indent_code(String &p_code, int p_from_line, int p_to_line) const {}
 	/* TODO */ virtual void add_global_constant(const StringName &p_variable, const Variant &p_value) {}
@@ -428,7 +463,6 @@ public:
 };
 
 class ResourceFormatLoaderCSharpScript : public ResourceFormatLoader {
-	GDCLASS(ResourceFormatLoaderCSharpScript, ResourceFormatLoader)
 public:
 	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = NULL);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;
@@ -437,7 +471,6 @@ public:
 };
 
 class ResourceFormatSaverCSharpScript : public ResourceFormatSaver {
-	GDCLASS(ResourceFormatSaverCSharpScript, ResourceFormatSaver)
 public:
 	virtual Error save(const String &p_path, const RES &p_resource, uint32_t p_flags = 0);
 	virtual void get_recognized_extensions(const RES &p_resource, List<String> *p_extensions) const;

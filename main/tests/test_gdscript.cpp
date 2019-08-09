@@ -127,6 +127,7 @@ static String _parser_expr(const GDScriptParser::Node *p_expr) {
 
 				case GDScriptParser::OperatorNode::OP_PARENT_CALL:
 					txt += ".";
+					FALLTHROUGH;
 				case GDScriptParser::OperatorNode::OP_CALL: {
 
 					ERR_FAIL_COND_V(c_node->arguments.size() < 1, "");
@@ -283,8 +284,14 @@ static String _parser_expr(const GDScriptParser::Node *p_expr) {
 				case GDScriptParser::OperatorNode::OP_BIT_XOR: {
 					txt = _parser_expr(c_node->arguments[0]) + "^" + _parser_expr(c_node->arguments[1]);
 				} break;
-				default: {}
+				default: {
+				}
 			}
+
+		} break;
+		case GDScriptParser::Node::TYPE_CAST: {
+			const GDScriptParser::CastNode *cast_node = static_cast<const GDScriptParser::CastNode *>(p_expr);
+			txt = _parser_expr(cast_node->source_node) + " as " + cast_node->cast_type.to_string();
 
 		} break;
 		case GDScriptParser::Node::TYPE_NEWLINE: {
@@ -667,6 +674,17 @@ static void _disassemble_class(const Ref<GDScript> &p_class, const Vector<String
 					incr += 2;
 
 				} break;
+				case GDScriptFunction::OPCODE_CAST_TO_SCRIPT: {
+
+					txt += " cast ";
+					txt += DADDR(3);
+					txt += "=";
+					txt += DADDR(1);
+					txt += " as ";
+					txt += DADDR(2);
+					incr += 4;
+
+				} break;
 				case GDScriptFunction::OPCODE_CONSTRUCT: {
 
 					Variant::Type t = Variant::Type(code[ip + 1]);
@@ -893,7 +911,7 @@ static void _disassemble_class(const Ref<GDScript> &p_class, const Vector<String
 			if (incr == 0) {
 
 				ERR_EXPLAIN("unhandled opcode: " + itos(code[ip]));
-				ERR_BREAK(incr == 0);
+				ERR_BREAK(true);
 			}
 
 			ip += incr;
@@ -956,7 +974,7 @@ MainLoop *test(TestType p_type) {
 			if (tk.get_token() == GDScriptTokenizer::TK_IDENTIFIER)
 				text = "'" + tk.get_token_identifier() + "' (identifier)";
 			else if (tk.get_token() == GDScriptTokenizer::TK_CONSTANT) {
-				Variant c = tk.get_token_constant();
+				const Variant &c = tk.get_token_constant();
 				if (c.get_type() == Variant::STRING)
 					text = "\"" + String(c) + "\"";
 				else
@@ -1016,18 +1034,16 @@ MainLoop *test(TestType p_type) {
 			return NULL;
 		}
 
-		GDScript *script = memnew(GDScript);
+		Ref<GDScript> gds;
+		gds.instance();
 
 		GDScriptCompiler gdc;
-		err = gdc.compile(&parser, script);
+		err = gdc.compile(&parser, gds.ptr());
 		if (err) {
 
 			print_line("Compile Error:\n" + itos(gdc.get_error_line()) + ":" + itos(gdc.get_error_column()) + ":" + gdc.get_error());
-			memdelete(script);
 			return NULL;
 		}
-
-		Ref<GDScript> gds = Ref<GDScript>(script);
 
 		Ref<GDScript> current = gds;
 

@@ -110,6 +110,7 @@ class TextureRegionEditor : public VBoxContainer {
 	void _set_snap_step_y(float p_val);
 	void _set_snap_sep_x(float p_val);
 	void _set_snap_sep_y(float p_val);
+	void _zoom_on_position(float p_zoom, Point2 p_position = Point2());
 	void _zoom_in();
 	void _zoom_reset();
 	void _zoom_out();
@@ -144,9 +145,15 @@ public:
 class TextureRegionEditorPlugin : public EditorPlugin {
 	GDCLASS(TextureRegionEditorPlugin, EditorPlugin);
 
+	bool manually_hidden;
 	Button *texture_region_button;
 	TextureRegionEditor *region_editor;
 	EditorNode *editor;
+
+protected:
+	static void _bind_methods();
+
+	void _editor_visiblity_changed();
 
 public:
 	virtual String get_name() const { return "TextureRegion"; }

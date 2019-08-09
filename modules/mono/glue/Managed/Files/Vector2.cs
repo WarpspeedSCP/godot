@@ -14,6 +14,7 @@ using real_t = System.Single;
 
 namespace Godot
 {
+    [Serializable]
     [StructLayout(LayoutKind.Sequential)]
     public struct Vector2 : IEquatable<Vector2>
     {
@@ -52,11 +53,15 @@ namespace Godot
 
         internal void Normalize()
         {
-            real_t length = x * x + y * y;
+            real_t lengthsq = LengthSquared();
 
-            if (length != 0f)
+            if (lengthsq == 0)
             {
-                length = Mathf.Sqrt(length);
+                x = y = 0f;
+            }
+            else
+            {
+                real_t length = Mathf.Sqrt(lengthsq);
                 x /= length;
                 y /= length;
             }
@@ -132,6 +137,11 @@ namespace Godot
                                 (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
         }
 
+        public Vector2 DirectionTo(Vector2 b)
+        {
+            return new Vector2(b.x - x, b.y - y).Normalized();
+        }
+
         public real_t DistanceSquaredTo(Vector2 to)
         {
             return (x - to.x) * (x - to.x) + (y - to.y) * (y - to.y);
@@ -177,11 +187,19 @@ namespace Godot
             return res;
         }
 
+        public Vector2 MoveToward(Vector2 to, real_t delta)
+        {
+            var v = this;
+            var vd = to - v;
+            var len = vd.Length();
+            return len <= delta || len < Mathf.Epsilon ? to : v + vd / len * delta;
+        }
+
         public Vector2 Normalized()
         {
-            var result = this;
-            result.Normalize();
-            return result;
+            var v = this;
+            v.Normalize();
+            return v;
         }
 
         public Vector2 Project(Vector2 onNormal)
@@ -205,11 +223,13 @@ namespace Godot
             return new Vector2(Mathf.Round(x), Mathf.Round(y));
         }
 
+        [Obsolete("Set is deprecated. Use the Vector2(" + nameof(real_t) + ", " + nameof(real_t) + ") constructor instead.", error: true)]
         public void Set(real_t x, real_t y)
         {
             this.x = x;
             this.y = y;
         }
+        [Obsolete("Set is deprecated. Use the Vector2(" + nameof(Vector2) + ") constructor instead.", error: true)]
         public void Set(Vector2 v)
         {
             x = v.x;
@@ -338,7 +358,7 @@ namespace Godot
 
         public static bool operator <(Vector2 left, Vector2 right)
         {
-            if (left.x.Equals(right.x))
+            if (Mathf.IsEqualApprox(left.x, right.x))
             {
                 return left.y < right.y;
             }
@@ -348,7 +368,7 @@ namespace Godot
 
         public static bool operator >(Vector2 left, Vector2 right)
         {
-            if (left.x.Equals(right.x))
+            if (Mathf.IsEqualApprox(left.x, right.x))
             {
                 return left.y > right.y;
             }
@@ -358,7 +378,7 @@ namespace Godot
 
         public static bool operator <=(Vector2 left, Vector2 right)
         {
-            if (left.x.Equals(right.x))
+            if (Mathf.IsEqualApprox(left.x, right.x))
             {
                 return left.y <= right.y;
             }
@@ -368,7 +388,7 @@ namespace Godot
 
         public static bool operator >=(Vector2 left, Vector2 right)
         {
-            if (left.x.Equals(right.x))
+            if (Mathf.IsEqualApprox(left.x, right.x))
             {
                 return left.y >= right.y;
             }
@@ -388,7 +408,7 @@ namespace Godot
 
         public bool Equals(Vector2 other)
         {
-            return x == other.x && y == other.y;
+            return Mathf.IsEqualApprox(x, other.x) && Mathf.IsEqualApprox(y, other.y);
         }
 
         public override int GetHashCode()

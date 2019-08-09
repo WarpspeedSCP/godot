@@ -30,6 +30,7 @@
 
 #include "gdscript.h"
 
+#include "core/core_string_names.h"
 #include "core/engine.h"
 #include "core/global_constants.h"
 #include "core/io/file_access_encrypted.h"
@@ -68,7 +69,7 @@ Variant GDScriptNativeClass::_new() {
 	Object *o = instance();
 	if (!o) {
 		ERR_EXPLAIN("Class type: '" + String(name) + "' is not instantiable.");
-		ERR_FAIL_COND_V(!o, Variant());
+		ERR_FAIL_V(Variant());
 	}
 
 	Reference *ref = Object::cast_to<Reference>(o);
@@ -226,7 +227,7 @@ void GDScript::get_script_method_list(List<MethodInfo> *p_list) const {
 
 	const GDScript *current = this;
 	while (current) {
-		for (const Map<StringName, GDScriptFunction *>::Element *E = member_functions.front(); E; E = E->next()) {
+		for (const Map<StringName, GDScriptFunction *>::Element *E = current->member_functions.front(); E; E = E->next()) {
 			GDScriptFunction *func = E->get();
 			MethodInfo mi;
 			mi.name = E->key();
@@ -331,7 +332,7 @@ ScriptInstance *GDScript::instance_create(Object *p_this) {
 	}
 
 	Variant::CallError unchecked_error;
-	return _create_instance(NULL, 0, p_this, Object::cast_to<Reference>(p_this), unchecked_error);
+	return _create_instance(NULL, 0, p_this, Object::cast_to<Reference>(p_this) != NULL, unchecked_error);
 }
 
 PlaceHolderScriptInstance *GDScript::placeholder_instance_create(Object *p_this) {
@@ -597,7 +598,7 @@ Error GDScript::reload(bool p_keep_state) {
 			return err;
 		}
 	}
-#if DEBUG_ENABLED
+#ifdef DEBUG_ENABLED
 	for (const List<GDScriptWarning>::Element *E = parser.get_warnings().front(); E; E = E->next()) {
 		const GDScriptWarning &warning = E->get();
 		if (ScriptDebugger::get_singleton()) {
@@ -1064,7 +1065,7 @@ Variant::Type GDScriptInstance::get_property_type(const StringName &p_name, bool
 }
 
 void GDScriptInstance::get_property_list(List<PropertyInfo> *p_properties) const {
-	// exported members, not doen yet!
+	// exported members, not done yet!
 
 	const GDScript *sptr = script.ptr();
 	List<PropertyInfo> props;
@@ -1232,6 +1233,27 @@ void GDScriptInstance::notification(int p_notification) {
 		}
 		sptr = sptr->_base;
 	}
+}
+
+String GDScriptInstance::to_string(bool *r_valid) {
+	if (has_method(CoreStringNames::get_singleton()->_to_string)) {
+		Variant::CallError ce;
+		Variant ret = call(CoreStringNames::get_singleton()->_to_string, NULL, 0, ce);
+		if (ce.error == Variant::CallError::CALL_OK) {
+			if (ret.get_type() != Variant::STRING) {
+				if (r_valid)
+					*r_valid = false;
+				ERR_EXPLAIN("Wrong type for " + CoreStringNames::get_singleton()->_to_string + ", must be a String.");
+				ERR_FAIL_V(String());
+			}
+			if (r_valid)
+				*r_valid = true;
+			return ret.operator String();
+		}
+	}
+	if (r_valid)
+		*r_valid = false;
+	return String();
 }
 
 Ref<Script> GDScriptInstance::get_script() const {
@@ -1945,6 +1967,10 @@ String GDScriptWarning::get_message() const {
 			CHECK_SYMBOLS(1);
 			return "The local variable '" + symbols[0] + "' is declared but never used in the block.";
 		} break;
+		case SHADOWED_VARIABLE: {
+			CHECK_SYMBOLS(2);
+			return "The local variable '" + symbols[0] + "' is shadowing an already defined variable at line " + symbols[1] + ".";
+		} break;
 		case UNUSED_CLASS_VARIABLE: {
 			CHECK_SYMBOLS(1);
 			return "The class variable '" + symbols[0] + "' is declared but never used in the script.";
@@ -2048,6 +2074,7 @@ String GDScriptWarning::get_name_from_code(Code p_code) {
 		"UNASSIGNED_VARIABLE",
 		"UNASSIGNED_VARIABLE_OP_ASSIGN",
 		"UNUSED_VARIABLE",
+		"SHADOWED_VARIABLE",
 		"UNUSED_CLASS_VARIABLE",
 		"UNUSED_ARGUMENT",
 		"UNREACHABLE_CODE",

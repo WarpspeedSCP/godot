@@ -148,7 +148,13 @@ btHeightfieldTerrainShape *ShapeBullet::create_shape_height_field(PoolVector<rea
 	const bool flipQuadEdges = false;
 	const void *heightsPtr = p_heights.read().ptr();
 
-	return bulletnew(btHeightfieldTerrainShape(p_width, p_depth, heightsPtr, ignoredHeightScale, p_min_height, p_max_height, YAxis, PHY_FLOAT, flipQuadEdges));
+	btHeightfieldTerrainShape *heightfield = bulletnew(btHeightfieldTerrainShape(p_width, p_depth, heightsPtr, ignoredHeightScale, p_min_height, p_max_height, YAxis, PHY_FLOAT, flipQuadEdges));
+
+	// The shape can be created without params when you do PhysicsServer.shape_create(PhysicsServer.SHAPE_HEIGHTMAP)
+	if (heightsPtr)
+		heightfield->buildAccelerator(16);
+
+	return heightfield;
 }
 
 btRayShape *ShapeBullet::create_shape_ray(real_t p_length, bool p_slips_on_slope) {
@@ -510,16 +516,17 @@ void HeightMapShapeBullet::set_data(const Variant &p_data) {
 	// Compute min and max heights if not specified.
 	if (!d.has("min_height") && !d.has("max_height")) {
 
-		PoolVector<real_t>::Read r = heights.read();
-		int heights_size = heights.size();
+		PoolVector<real_t>::Read r = l_heights.read();
+		int heights_size = l_heights.size();
 
 		for (int i = 0; i < heights_size; ++i) {
 			real_t h = r[i];
 
-			if (h < l_min_height)
+			if (h < l_min_height) {
 				l_min_height = h;
-			else if (h > l_max_height)
+			} else if (h > l_max_height) {
 				l_max_height = h;
+			}
 		}
 	}
 

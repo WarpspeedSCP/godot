@@ -77,6 +77,14 @@ godot_bool GDAPI godot_vector2_is_normalized(const godot_vector2 *p_self) {
 	return self->is_normalized();
 }
 
+godot_vector2 GDAPI godot_vector2_direction_to(const godot_vector2 *p_self, const godot_vector2 *p_to) {
+	godot_vector2 dest;
+	const Vector2 *self = (const Vector2 *)p_self;
+	const Vector2 *to = (const Vector2 *)p_to;
+	*((Vector2 *)&dest) = self->direction_to(*to);
+	return dest;
+}
+
 godot_real GDAPI godot_vector2_distance_to(const godot_vector2 *p_self, const godot_vector2 *p_to) {
 	const Vector2 *self = (const Vector2 *)p_self;
 	const Vector2 *to = (const Vector2 *)p_to;
@@ -116,6 +124,14 @@ godot_vector2 GDAPI godot_vector2_cubic_interpolate(const godot_vector2 *p_self,
 	const Vector2 *pre_a = (const Vector2 *)p_pre_a;
 	const Vector2 *post_b = (const Vector2 *)p_post_b;
 	*((Vector2 *)&dest) = self->cubic_interpolate(*b, *pre_a, *post_b, p_t);
+	return dest;
+}
+
+godot_vector2 GDAPI godot_vector2_move_toward(const godot_vector2 *p_self, const godot_vector2 *p_to, const godot_real p_delta) {
+	godot_vector2 dest;
+	const Vector2 *self = (const Vector2 *)p_self;
+	const Vector2 *to = (const Vector2 *)p_to;
+	*((Vector2 *)&dest) = self->move_toward(*to, p_delta);
 	return dest;
 }
 

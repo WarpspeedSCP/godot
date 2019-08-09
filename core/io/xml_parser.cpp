@@ -348,7 +348,7 @@ uint64_t XMLParser::get_node_offset() const {
 
 Error XMLParser::seek(uint64_t p_pos) {
 
-	ERR_FAIL_COND_V(!data, ERR_FILE_EOF)
+	ERR_FAIL_COND_V(!data, ERR_FILE_EOF);
 	ERR_FAIL_COND_V(p_pos >= length, ERR_FILE_EOF);
 
 	P = data + p_pos;
@@ -486,9 +486,7 @@ Error XMLParser::open(const String &p_path) {
 	Error err;
 	FileAccess *file = FileAccess::open(p_path, FileAccess::READ, &err);
 
-	if (err) {
-		ERR_FAIL_COND_V(err != OK, err);
-	}
+	ERR_FAIL_COND_V(err != OK, err);
 
 	length = file->get_len();
 	ERR_FAIL_COND_V(length < 1, ERR_FILE_CORRUPT);

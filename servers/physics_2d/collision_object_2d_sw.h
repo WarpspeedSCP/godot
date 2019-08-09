@@ -78,6 +78,8 @@ private:
 	uint32_t collision_layer;
 	bool _static;
 
+	SelfList<CollisionObject2DSW> pending_shape_update_list;
+
 	void _update_shapes();
 
 protected:
@@ -111,7 +113,7 @@ public:
 	void _shape_changed();
 
 	_FORCE_INLINE_ Type get_type() const { return type; }
-	void add_shape(Shape2DSW *p_shape, const Transform2D &p_transform = Transform2D());
+	void add_shape(Shape2DSW *p_shape, const Transform2D &p_transform = Transform2D(), bool p_disabled = false);
 	void set_shape(int p_index, Shape2DSW *p_shape);
 	void set_shape_transform(int p_index, const Transform2D &p_transform);
 	void set_shape_metadata(int p_index, const Variant &p_metadata);

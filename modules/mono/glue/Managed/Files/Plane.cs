@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 #if REAL_T_IS_DOUBLE
 using real_t = System.Double;
 #else
@@ -7,6 +8,8 @@ using real_t = System.Single;
 
 namespace Godot
 {
+    [Serializable]
+    [StructLayout(LayoutKind.Sequential)]
     public struct Plane : IEquatable<Plane>
     {
         private Vector3 _normal;
@@ -200,7 +203,7 @@ namespace Godot
 
         public bool Equals(Plane other)
         {
-            return _normal == other._normal && D == other.D;
+            return _normal == other._normal && Mathf.IsEqualApprox(D, other.D);
         }
 
         public override int GetHashCode()

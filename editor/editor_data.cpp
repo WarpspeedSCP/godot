@@ -499,7 +499,6 @@ Object *EditorData::instance_custom_type(const String &p_type, const String &p_i
 
 		for (int i = 0; i < get_custom_types()[p_inherits].size(); i++) {
 			if (get_custom_types()[p_inherits][i].name == p_type) {
-				Ref<Texture> icon = get_custom_types()[p_inherits][i].icon;
 				Ref<Script> script = get_custom_types()[p_inherits][i].script;
 
 				Object *ob = ClassDB::instance(p_inherits);
@@ -508,8 +507,6 @@ Object *EditorData::instance_custom_type(const String &p_type, const String &p_i
 					ob->call("set_name", p_type);
 				}
 				ob->set_script(script.get_ref_ptr());
-				if (icon.is_valid())
-					ob->set_meta("_editor_icon", icon);
 				return ob;
 			}
 		}
@@ -560,6 +557,7 @@ void EditorData::move_edited_scene_index(int p_idx, int p_to_idx) {
 	ERR_FAIL_INDEX(p_to_idx, edited_scene.size());
 	SWAP(edited_scene.write[p_idx], edited_scene.write[p_to_idx]);
 }
+
 void EditorData::remove_scene(int p_idx) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	if (edited_scene[p_idx].root) {

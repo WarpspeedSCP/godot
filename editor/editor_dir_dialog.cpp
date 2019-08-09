@@ -133,7 +133,7 @@ void EditorDirDialog::_make_dir() {
 
 	TreeItem *ti = tree->get_selected();
 	if (!ti) {
-		mkdirerr->set_text(TTR("Please select a base directory first"));
+		mkdirerr->set_text(TTR("Please select a base directory first."));
 		mkdirerr->popup_centered_minsize();
 		return;
 	}
@@ -186,7 +186,7 @@ EditorDirDialog::EditorDirDialog() {
 
 	tree->connect("item_activated", this, "_ok");
 
-	makedir = add_button(TTR("Create Folder"), OS::get_singleton()->get_swap_ok_cancel() ? true : false, "makedir");
+	makedir = add_button(TTR("Create Folder"), OS::get_singleton()->get_swap_ok_cancel(), "makedir");
 	makedir->connect("pressed", this, "_make_dir");
 
 	makedialog = memnew(ConfirmationDialog);

@@ -41,7 +41,7 @@
 class ExportTemplateVersion;
 
 class ExportTemplateManager : public ConfirmationDialog {
-	GDCLASS(ExportTemplateManager, ConfirmationDialog)
+	GDCLASS(ExportTemplateManager, ConfirmationDialog);
 
 	AcceptDialog *template_downloader;
 	VBoxContainer *template_list;
@@ -84,6 +84,9 @@ protected:
 	static void _bind_methods();
 
 public:
+	bool can_install_android_template();
+	Error install_android_template();
+
 	void popup_manager();
 
 	ExportTemplateManager();
