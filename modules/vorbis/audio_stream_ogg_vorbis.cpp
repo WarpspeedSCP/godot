@@ -103,7 +103,7 @@ int AudioStreamPlaybackOGGVorbis::mix(int16_t *p_buffer, int p_frames) {
 
 		int todo = p_frames;
 
-		if (todo == 0 || todo < MIN_MIX) {
+		if (todo < MIN_MIX) {
 			break;
 		}
 
@@ -143,8 +143,7 @@ int AudioStreamPlaybackOGGVorbis::mix(int16_t *p_buffer, int p_frames) {
 				bool ok = ov_time_seek(&vf, loop_restart_time) == 0;
 				if (!ok) {
 					playing = false;
-					//ERR_EXPLAIN("loop restart time rejected");
-					ERR_PRINT("loop restart time rejected")
+					ERR_PRINT("Loop restart time rejected");
 				}
 
 				frames_mixed = stream_srate * loop_restart_time;

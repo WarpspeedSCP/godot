@@ -188,7 +188,7 @@ void AudioStreamOGGVorbis::set_data(const PoolVector<uint8_t> &p_data) {
 		ogg_stream = stb_vorbis_open_memory((const unsigned char *)src_datar.ptr(), src_data_len, &error, &ogg_alloc);
 
 		if (!ogg_stream && error == VORBIS_outofmem) {
-			w = PoolVector<char>::Write();
+			w.release();
 			alloc_try *= 2;
 		} else {
 
@@ -273,6 +273,7 @@ void AudioStreamOGGVorbis::_bind_methods() {
 AudioStreamOGGVorbis::AudioStreamOGGVorbis() {
 
 	data = NULL;
+	data_len = 0;
 	length = 0;
 	sample_rate = 1;
 	channels = 1;

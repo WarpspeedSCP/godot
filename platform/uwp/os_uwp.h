@@ -41,6 +41,7 @@
 #include "main/input_default.h"
 #include "power_uwp.h"
 #include "servers/audio_server.h"
+#include "servers/camera_server.h"
 #include "servers/visual/rasterizer.h"
 #include "servers/visual_server.h"
 
@@ -94,6 +95,8 @@ private:
 	Point2i center;
 	VisualServer *visual_server;
 	int pressrc;
+
+	CameraServer *camera_server;
 
 	ContextEGL_UWP *gl_context;
 	Windows::UI::Core::CoreWindow ^ window;
@@ -195,7 +198,7 @@ public:
 
 	virtual MainLoop *get_main_loop() const;
 
-	virtual String get_name();
+	virtual String get_name() const;
 
 	virtual Date get_date(bool utc) const;
 	virtual Time get_time(bool utc) const;
@@ -208,7 +211,7 @@ public:
 	virtual void delay_usec(uint32_t p_usec) const;
 	virtual uint64_t get_ticks_usec() const;
 
-	virtual Error execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id = NULL, String *r_pipe = NULL, int *r_exitcode = NULL, bool read_stderr = false);
+	virtual Error execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id = NULL, String *r_pipe = NULL, int *r_exitcode = NULL, bool read_stderr = false, Mutex *p_pipe_mutex = NULL);
 	virtual Error kill(const ProcessID &p_pid);
 
 	virtual bool has_environment(const String &p_var) const;
@@ -219,6 +222,7 @@ public:
 	virtual String get_clipboard() const;
 
 	void set_cursor_shape(CursorShape p_shape);
+	CursorShape get_cursor_shape() const;
 	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 	void set_icon(const Ref<Image> &p_icon);
 

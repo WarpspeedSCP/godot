@@ -35,7 +35,7 @@
 
 class TextEditor : public ScriptEditorBase {
 
-	GDCLASS(TextEditor, ScriptEditorBase)
+	GDCLASS(TextEditor, ScriptEditorBase);
 
 private:
 	CodeTextEditor *code_editor;
@@ -46,6 +46,7 @@ private:
 	MenuButton *edit_menu;
 	PopupMenu *highlighter_menu;
 	MenuButton *search_menu;
+	MenuButton *bookmarks_menu;
 	PopupMenu *context_menu;
 
 	GotoLineDialog *goto_line_dialog;
@@ -87,6 +88,10 @@ private:
 		SEARCH_FIND_PREV,
 		SEARCH_REPLACE,
 		SEARCH_GOTO_LINE,
+		BOOKMARK_TOGGLE,
+		BOOKMARK_GOTO_NEXT,
+		BOOKMARK_GOTO_PREV,
+		BOOKMARK_REMOVE_ALL,
 	};
 
 protected:
@@ -106,6 +111,9 @@ protected:
 
 	void _validate_script();
 
+	void _update_bookmark_list();
+	void _bookmark_item_pressed(int p_idx);
+
 public:
 	virtual void add_syntax_highlighter(SyntaxHighlighter *p_highlighter);
 	virtual void set_syntax_highlighter(SyntaxHighlighter *p_highlighter);
@@ -123,7 +131,11 @@ public:
 	virtual Vector<String> get_functions();
 	virtual void get_breakpoints(List<int> *p_breakpoints);
 	virtual void goto_line(int p_line, bool p_with_error = false);
+	void goto_line_selection(int p_line, int p_begin, int p_end);
+	virtual void set_executing_line(int p_line);
+	virtual void clear_executing_line();
 	virtual void trim_trailing_whitespace();
+	virtual void insert_final_newline();
 	virtual void convert_indent_to_spaces();
 	virtual void convert_indent_to_tabs();
 	virtual void ensure_focus();
@@ -138,9 +150,12 @@ public:
 	virtual Control *get_edit_menu();
 	virtual void clear_edit_menu();
 
+	virtual void validate();
+
 	static void register_editor();
 
 	TextEditor();
+	~TextEditor();
 };
 
 #endif // TEXT_EDITOR_H

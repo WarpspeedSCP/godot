@@ -39,7 +39,13 @@
 #include "scene/scene_string_names.h"
 #include "viewport.h"
 
+#ifdef TOOLS_ENABLED
+#include "editor/editor_settings.h"
+#endif
+
 VARIANT_ENUM_CAST(Node::PauseMode);
+
+int Node::orphan_node_count = 0;
 
 void Node::_notification(int p_notification) {
 
@@ -65,6 +71,8 @@ void Node::_notification(int p_notification) {
 
 		} break;
 		case NOTIFICATION_ENTER_TREE: {
+			ERR_FAIL_COND(!get_viewport());
+			ERR_FAIL_COND(!get_tree());
 
 			if (data.pause_mode == PAUSE_MODE_INHERIT) {
 
@@ -84,11 +92,16 @@ void Node::_notification(int p_notification) {
 				add_to_group("_vp_unhandled_key_input" + itos(get_viewport()->get_instance_id()));
 
 			get_tree()->node_count++;
+			orphan_node_count--;
 
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
+			ERR_FAIL_COND(!get_viewport());
+			ERR_FAIL_COND(!get_tree());
 
 			get_tree()->node_count--;
+			orphan_node_count++;
+
 			if (data.input)
 				remove_from_group("_vp_input" + itos(get_viewport()->get_instance_id()));
 			if (data.unhandled_input)
@@ -197,7 +210,7 @@ void Node::_propagate_enter_tree() {
 	}
 
 	data.viewport = Object::cast_to<Viewport>(this);
-	if (!data.viewport)
+	if (!data.viewport && data.parent)
 		data.viewport = data.parent->data.viewport;
 
 	data.inside_tree = true;
@@ -395,7 +408,6 @@ void Node::set_physics_process(bool p_process) {
 	else
 		remove_from_group("physics_process");
 
-	data.physics_process = p_process;
 	_change_notify("physics_process");
 }
 
@@ -416,7 +428,6 @@ void Node::set_physics_process_internal(bool p_process_internal) {
 	else
 		remove_from_group("physics_process_internal");
 
-	data.physics_process_internal = p_process_internal;
 	_change_notify("physics_process_internal");
 }
 
@@ -798,7 +809,6 @@ void Node::set_process(bool p_idle_process) {
 	else
 		remove_from_group("idle_process");
 
-	data.idle_process = p_idle_process;
 	_change_notify("idle_process");
 }
 
@@ -819,7 +829,6 @@ void Node::set_process_internal(bool p_idle_process_internal) {
 	else
 		remove_from_group("idle_process_internal");
 
-	data.idle_process_internal = p_idle_process_internal;
 	_change_notify("idle_process_internal");
 }
 
@@ -830,6 +839,8 @@ bool Node::is_processing_internal() const {
 
 void Node::set_process_priority(int p_priority) {
 	data.process_priority = p_priority;
+
+	ERR_FAIL_COND(!data.tree);
 
 	if (is_processing())
 		data.tree->make_group_changed("idle_process");
@@ -940,6 +951,7 @@ void Node::set_name(const String &p_name) {
 	if (is_inside_tree()) {
 
 		emit_signal("renamed");
+		get_tree()->node_renamed(this);
 		get_tree()->tree_changed();
 	}
 }
@@ -1005,7 +1017,7 @@ void Node::_validate_child_name(Node *p_child, bool p_force_human_readable) {
 
 		if (!unique) {
 
-			node_hrcr_count.ref();
+			ERR_FAIL_COND(!node_hrcr_count.ref());
 			String name = "@" + String(p_child->get_name()) + "@" + itos(node_hrcr_count.get());
 			p_child->data.name = name;
 		}
@@ -1155,7 +1167,7 @@ void Node::add_child(Node *p_child, bool p_legible_unique_name) {
 	ERR_FAIL_NULL(p_child);
 
 	if (p_child == this) {
-		ERR_EXPLAIN("Can't add child '" + p_child->get_name() + "' to itself.")
+		ERR_EXPLAIN("Can't add child '" + p_child->get_name() + "' to itself.");
 		ERR_FAIL_COND(p_child == this); // adding to itself!
 	}
 
@@ -1189,7 +1201,7 @@ void Node::add_child_below_node(Node *p_node, Node *p_child, bool p_legible_uniq
 	if (is_a_parent_of(p_node)) {
 		move_child(p_child, p_node->get_position_in_parent() + 1);
 	} else {
-		WARN_PRINTS("Cannot move under node " + p_node->get_name() + " as " + p_child->get_name() + " does not share a parent.")
+		WARN_PRINTS("Cannot move under node " + p_node->get_name() + " as " + p_child->get_name() + " does not share a parent.");
 	}
 }
 
@@ -1253,6 +1265,7 @@ void Node::remove_child(Node *p_child) {
 		}
 	}
 
+	ERR_EXPLAIN("Cannot remove child node " + p_child->to_string() + " as it is not in our list of children");
 	ERR_FAIL_COND(idx == -1);
 	//ERR_FAIL_COND( p_child->data.blocked > 0 );
 
@@ -1312,6 +1325,10 @@ Node *Node::_get_child_by_name(const StringName &p_name) const {
 }
 
 Node *Node::get_node_or_null(const NodePath &p_path) const {
+
+	if (p_path.is_empty()) {
+		return NULL;
+	}
 
 	if (!data.inside_tree && p_path.is_absolute()) {
 		ERR_EXPLAIN("Can't use get_node() with absolute paths from outside the active scene tree.");
@@ -1379,7 +1396,7 @@ Node *Node::get_node(const NodePath &p_path) const {
 	Node *node = get_node_or_null(p_path);
 	if (!node) {
 		ERR_EXPLAIN("Node not found: " + p_path);
-		ERR_FAIL_COND_V(!node, NULL);
+		ERR_FAIL_V(NULL);
 	}
 	return node;
 }
@@ -1648,6 +1665,7 @@ NodePath Node::get_path_to(const Node *p_node) const {
 
 NodePath Node::get_path() const {
 
+	ERR_EXPLAIN("Cannot get path of node as it is not in a scene tree");
 	ERR_FAIL_COND_V(!is_inside_tree(), NodePath());
 
 	if (data.path_cache)
@@ -1739,7 +1757,7 @@ bool Node::has_persistent_groups() const {
 
 	return false;
 }
-void Node::_print_tree_pretty(const String prefix, const bool last) {
+void Node::_print_tree_pretty(const String &prefix, const bool last) {
 
 	String new_prefix = last ? String::utf8(" ┖╴") : String::utf8(" ┠╴");
 	print_line(prefix + new_prefix + String(get_name()));
@@ -2063,7 +2081,9 @@ Node *Node::_duplicate(int p_flags, Map<const Node *, Node *> *r_duplimap) const
 		}
 	}
 
-	node->set_name(get_name());
+	if (get_name() != String()) {
+		node->set_name(get_name());
+	}
 
 #ifdef TOOLS_ENABLED
 	if ((p_flags & DUPLICATE_FROM_EDITOR) && r_duplimap)
@@ -2176,8 +2196,11 @@ void Node::_duplicate_and_reown(Node *p_new_parent, const Map<Node *, Node *> &p
 		ERR_EXPLAIN("Node: Could not duplicate: " + String(get_class()));
 		ERR_FAIL_COND(!obj);
 		node = Object::cast_to<Node>(obj);
-		if (!node)
+		if (!node) {
 			memdelete(obj);
+			ERR_EXPLAIN("Node: Could not duplicate: " + String(get_class()));
+			ERR_FAIL();
+		}
 	}
 
 	List<PropertyInfo> plist;
@@ -2273,16 +2296,16 @@ Node *Node::duplicate_and_reown(const Map<Node *, Node *> &p_reown_map) const {
 
 	ERR_FAIL_COND_V(get_filename() != "", NULL);
 
-	Node *node = NULL;
-
 	Object *obj = ClassDB::instance(get_class());
 	ERR_EXPLAIN("Node: Could not duplicate: " + String(get_class()));
 	ERR_FAIL_COND_V(!obj, NULL);
-	node = Object::cast_to<Node>(obj);
-	if (!node)
-		memdelete(obj);
-	ERR_FAIL_COND_V(!node, NULL);
 
+	Node *node = Object::cast_to<Node>(obj);
+	if (!node) {
+		memdelete(obj);
+		ERR_EXPLAIN("Node: Could not duplicate: " + String(get_class()));
+		ERR_FAIL_V(NULL);
+	}
 	node->set_name(get_name());
 
 	List<PropertyInfo> plist;
@@ -2417,7 +2440,7 @@ void Node::_replace_connections_target(Node *p_new_target) {
 
 		if (c.flags & CONNECT_PERSIST) {
 			c.source->disconnect(c.signal, this, c.method);
-			bool valid = p_new_target->has_method(c.method) || p_new_target->get_script().is_null() || Ref<Script>(p_new_target->get_script())->has_method(c.method);
+			bool valid = p_new_target->has_method(c.method) || Ref<Script>(p_new_target->get_script()).is_null() || Ref<Script>(p_new_target->get_script())->has_method(c.method);
 			ERR_EXPLAIN("Attempt to connect signal \'" + c.source->get_class() + "." + c.signal + "\' to nonexistent method \'" + c.target->get_class() + "." + c.method + "\'");
 			ERR_CONTINUE(!valid);
 			c.source->connect(c.signal, p_new_target, c.method, c.binds, c.flags);
@@ -2461,21 +2484,18 @@ bool Node::has_node_and_resource(const NodePath &p_path) const {
 
 	if (!has_node(p_path))
 		return false;
-	Node *node = get_node(p_path);
+	RES res;
+	Vector<StringName> leftover_path;
+	Node *node = get_node_and_resource(p_path, res, leftover_path, false);
 
-	bool result = false;
-
-	node->get_indexed(p_path.get_subnames(), &result);
-
-	return result;
+	return node;
 }
 
 Array Node::_get_node_and_resource(const NodePath &p_path) {
 
-	Node *node;
 	RES res;
 	Vector<StringName> leftover_path;
-	node = get_node_and_resource(p_path, res, leftover_path);
+	Node *node = get_node_and_resource(p_path, res, leftover_path, false);
 	Array result;
 
 	if (node)
@@ -2505,10 +2525,16 @@ Node *Node::get_node_and_resource(const NodePath &p_path, RES &r_res, Vector<Str
 
 		int j = 0;
 		// If not p_last_is_property, we shouldn't consider the last one as part of the resource
-		for (; j < p_path.get_subname_count() - p_last_is_property; j++) {
-			RES new_res = j == 0 ? node->get(p_path.get_subname(j)) : r_res->get(p_path.get_subname(j));
+		for (; j < p_path.get_subname_count() - (int)p_last_is_property; j++) {
+			Variant new_res_v = j == 0 ? node->get(p_path.get_subname(j)) : r_res->get(p_path.get_subname(j));
 
-			if (new_res.is_null()) {
+			if (new_res_v.get_type() == Variant::NIL) { // Found nothing on that path
+				return NULL;
+			}
+
+			RES new_res = new_res_v;
+
+			if (new_res.is_null()) { // No longer a resource, assume property
 				break;
 			}
 
@@ -2628,10 +2654,16 @@ NodePath Node::get_import_path() const {
 
 static void _add_nodes_to_options(const Node *p_base, const Node *p_node, List<String> *r_options) {
 
+#ifdef TOOLS_ENABLED
+	const String quote_style = EDITOR_DEF("text_editor/completion/use_single_quotes", 0) ? "'" : "\"";
+#else
+	const String quote_style = "\"";
+#endif
+
 	if (p_node != p_base && !p_node->get_owner())
 		return;
 	String n = p_base->get_path_to(p_node);
-	r_options->push_back("\"" + n + "\"");
+	r_options->push_back(quote_style + n + quote_style);
 	for (int i = 0; i < p_node->get_child_count(); i++) {
 		_add_nodes_to_options(p_base, p_node->get_child(i), r_options);
 	}
@@ -2755,6 +2787,7 @@ void Node::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("can_process"), &Node::can_process);
 	ClassDB::bind_method(D_METHOD("print_stray_nodes"), &Node::_print_stray_nodes);
 	ClassDB::bind_method(D_METHOD("get_position_in_parent"), &Node::get_position_in_parent);
+
 	ClassDB::bind_method(D_METHOD("set_display_folded", "fold"), &Node::set_display_folded);
 	ClassDB::bind_method(D_METHOD("is_displayed_folded"), &Node::is_displayed_folded);
 
@@ -2830,9 +2863,21 @@ void Node::_bind_methods() {
 	BIND_CONSTANT(NOTIFICATION_DRAG_BEGIN);
 	BIND_CONSTANT(NOTIFICATION_DRAG_END);
 	BIND_CONSTANT(NOTIFICATION_PATH_CHANGED);
-	BIND_CONSTANT(NOTIFICATION_TRANSLATION_CHANGED);
 	BIND_CONSTANT(NOTIFICATION_INTERNAL_PROCESS);
 	BIND_CONSTANT(NOTIFICATION_INTERNAL_PHYSICS_PROCESS);
+
+	BIND_CONSTANT(NOTIFICATION_WM_MOUSE_ENTER);
+	BIND_CONSTANT(NOTIFICATION_WM_MOUSE_EXIT);
+	BIND_CONSTANT(NOTIFICATION_WM_FOCUS_IN);
+	BIND_CONSTANT(NOTIFICATION_WM_FOCUS_OUT);
+	BIND_CONSTANT(NOTIFICATION_WM_QUIT_REQUEST);
+	BIND_CONSTANT(NOTIFICATION_WM_GO_BACK_REQUEST);
+	BIND_CONSTANT(NOTIFICATION_WM_UNFOCUS_REQUEST);
+	BIND_CONSTANT(NOTIFICATION_OS_MEMORY_WARNING);
+	BIND_CONSTANT(NOTIFICATION_TRANSLATION_CHANGED);
+	BIND_CONSTANT(NOTIFICATION_WM_ABOUT);
+	BIND_CONSTANT(NOTIFICATION_CRASH);
+	BIND_CONSTANT(NOTIFICATION_OS_IME_UPDATE);
 
 	BIND_ENUM_CONSTANT(PAUSE_MODE_INHERIT);
 	BIND_ENUM_CONSTANT(PAUSE_MODE_STOP);
@@ -2855,7 +2900,12 @@ void Node::_bind_methods() {
 	//ADD_PROPERTY( PropertyInfo( Variant::BOOL, "process/unhandled_input" ), "set_process_unhandled_input","is_processing_unhandled_input" ) ;
 	ADD_GROUP("Pause", "pause_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "pause_mode", PROPERTY_HINT_ENUM, "Inherit,Stop,Process"), "set_pause_mode", "get_pause_mode");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editor/display_folded", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "set_display_folded", "is_displayed_folded");
+
+#ifdef ENABLE_DEPRECATED
+	//no longer exists, but remains for compatibility (keep previous scenes folded
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editor/display_folded", PROPERTY_HINT_NONE, "", 0), "set_display_folded", "is_displayed_folded");
+#endif
+
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "name", PROPERTY_HINT_NONE, "", 0), "set_name", "get_name");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "filename", PROPERTY_HINT_NONE, "", 0), "set_filename", "get_filename");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "owner", PROPERTY_HINT_RESOURCE_TYPE, "Node", 0), "set_owner", "get_owner");
@@ -2916,6 +2966,8 @@ Node::Node() {
 	data.use_placeholder = false;
 	data.display_folded = false;
 	data.ready_first = true;
+
+	orphan_node_count++;
 }
 
 Node::~Node() {
@@ -2926,6 +2978,8 @@ Node::~Node() {
 
 	ERR_FAIL_COND(data.parent);
 	ERR_FAIL_COND(data.children.size());
+
+	orphan_node_count--;
 }
 
 ////////////////////////////////

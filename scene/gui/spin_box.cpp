@@ -40,7 +40,7 @@ Size2 SpinBox::get_minimum_size() const {
 
 void SpinBox::_value_changed(double) {
 
-	String value = String::num(get_value(), Math::step_decimals(get_step()));
+	String value = String::num(get_value(), Math::range_step_decimals(get_step()));
 	if (prefix != "")
 		value = prefix + " " + value;
 	if (suffix != "")
@@ -173,7 +173,7 @@ void SpinBox::_line_edit_focus_exit() {
 	_text_entered(line_edit->get_text());
 }
 
-inline void SpinBox::_adjust_width_for_icon(const Ref<Texture> icon) {
+inline void SpinBox::_adjust_width_for_icon(const Ref<Texture> &icon) {
 
 	int w = icon->get_width();
 	if (w != last_w) {
@@ -277,6 +277,7 @@ SpinBox::SpinBox() {
 	add_child(line_edit);
 
 	line_edit->set_anchors_and_margins_preset(Control::PRESET_WIDE);
+	line_edit->set_mouse_filter(MOUSE_FILTER_PASS);
 	//connect("value_changed",this,"_value_changed");
 	line_edit->connect("text_entered", this, "_text_entered", Vector<Variant>(), CONNECT_DEFERRED);
 	line_edit->connect("focus_exited", this, "_line_edit_focus_exit", Vector<Variant>(), CONNECT_DEFERRED);

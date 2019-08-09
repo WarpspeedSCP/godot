@@ -53,7 +53,7 @@ public:
 
 		PARAM_INITIAL_LINEAR_VELOCITY,
 		PARAM_ANGULAR_VELOCITY,
-		//PARAM_ORBIT_VELOCITY,
+		PARAM_ORBIT_VELOCITY,
 		PARAM_LINEAR_ACCEL,
 		PARAM_RADIAL_ACCEL,
 		PARAM_TANGENTIAL_ACCEL,
@@ -95,6 +95,7 @@ private:
 		float hue_rot_rand;
 		float anim_offset_rand;
 		float time;
+		float lifetime;
 		Color base_color;
 
 		uint32_t seed;
@@ -116,7 +117,7 @@ private:
 		const Particle *particles;
 
 		bool operator()(int p_a, int p_b) const {
-			return particles[p_a].time < particles[p_b].time;
+			return particles[p_a].time > particles[p_b].time;
 		}
 	};
 
@@ -137,10 +138,13 @@ private:
 	float pre_process_time;
 	float explosiveness_ratio;
 	float randomness_ratio;
+	float lifetime_randomness;
 	float speed_scale;
 	bool local_coords;
 	int fixed_fps;
 	bool fractional_delta;
+
+	Transform inv_emission_transform;
 
 	volatile bool can_update;
 
@@ -150,6 +154,7 @@ private:
 
 	////////
 
+	Vector3 direction;
 	float spread;
 	float flatness;
 
@@ -197,6 +202,7 @@ public:
 	void set_pre_process_time(float p_time);
 	void set_explosiveness_ratio(float p_ratio);
 	void set_randomness_ratio(float p_ratio);
+	void set_lifetime_randomness(float p_random);
 	void set_visibility_aabb(const AABB &p_aabb);
 	void set_use_local_coordinates(bool p_enable);
 	void set_speed_scale(float p_scale);
@@ -208,6 +214,7 @@ public:
 	float get_pre_process_time() const;
 	float get_explosiveness_ratio() const;
 	float get_randomness_ratio() const;
+	float get_lifetime_randomness() const;
 	AABB get_visibility_aabb() const;
 	bool get_use_local_coordinates() const;
 	float get_speed_scale() const;
@@ -229,6 +236,9 @@ public:
 
 	///////////////////
 
+	void set_direction(Vector3 p_direction);
+	Vector3 get_direction() const;
+
 	void set_spread(float p_spread);
 	float get_spread() const;
 
@@ -247,7 +257,7 @@ public:
 	void set_color(const Color &p_color);
 	Color get_color() const;
 
-	void set_color_ramp(const Ref<Gradient> &p_texture);
+	void set_color_ramp(const Ref<Gradient> &p_ramp);
 	Ref<Gradient> get_color_ramp() const;
 
 	void set_particle_flag(Flags p_flag, bool p_enable);

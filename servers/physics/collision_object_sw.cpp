@@ -32,13 +32,14 @@
 #include "servers/physics/physics_server_sw.h"
 #include "space_sw.h"
 
-void CollisionObjectSW::add_shape(ShapeSW *p_shape, const Transform &p_transform) {
+void CollisionObjectSW::add_shape(ShapeSW *p_shape, const Transform &p_transform, bool p_disabled) {
 
 	Shape s;
 	s.shape = p_shape;
 	s.xform = p_transform;
 	s.xform_inv = s.xform.affine_inverse();
 	s.bpid = 0; //needs update
+	s.disabled = p_disabled;
 	shapes.push_back(s);
 	p_shape->add_owner(this);
 
@@ -73,6 +74,13 @@ void CollisionObjectSW::set_shape_transform(int p_index, const Transform &p_tran
 	}
 	//_update_shapes();
 	//_shapes_changed();
+}
+
+void CollisionObjectSW::set_shape_as_disabled(int p_idx, bool p_enable) {
+	shapes.write[p_idx].disabled = p_enable;
+	if (!pending_shape_update_list.in_list()) {
+		PhysicsServerSW::singleton->pending_shape_update_list.add(&pending_shape_update_list);
+	}
 }
 
 void CollisionObjectSW::remove_shape(ShapeSW *p_shape) {

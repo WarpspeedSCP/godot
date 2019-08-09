@@ -39,7 +39,7 @@ class VisualScriptNodeInstance;
 class VisualScript;
 
 class VisualScriptNode : public Resource {
-	GDCLASS(VisualScriptNode, Resource)
+	GDCLASS(VisualScriptNode, Resource);
 
 	friend class VisualScript;
 
@@ -54,7 +54,6 @@ class VisualScriptNode : public Resource {
 	void validate_input_default_values();
 
 protected:
-	void _notification(int p_what);
 	void ports_changed_notify();
 	static void _bind_methods();
 
@@ -166,7 +165,7 @@ public:
 
 class VisualScript : public Script {
 
-	GDCLASS(VisualScript, Script)
+	GDCLASS(VisualScript, Script);
 
 	RES_BASE_EXTENSION("vs");
 
@@ -405,6 +404,7 @@ public:
 	virtual bool has_method(const StringName &p_method) const;
 	virtual Variant call(const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error);
 	virtual void notification(int p_notification);
+	String to_string(bool *r_valid);
 
 	bool set_variable(const StringName &p_variable, const Variant &p_value) {
 

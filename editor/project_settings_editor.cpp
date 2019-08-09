@@ -42,18 +42,18 @@
 ProjectSettingsEditor *ProjectSettingsEditor::singleton = NULL;
 
 static const char *_button_names[JOY_BUTTON_MAX] = {
-	"PS Cross, XBox A, Nintendo B",
-	"PS Circle, XBox B, Nintendo A",
-	"PS Square, XBox X, Nintendo Y",
-	"PS Triangle, XBox Y, Nintendo X",
+	"DualShock Cross, Xbox A, Nintendo B",
+	"DualShock Circle, Xbox B, Nintendo A",
+	"DualShock Square, Xbox X, Nintendo Y",
+	"DualShock Triangle, Xbox Y, Nintendo X",
 	"L, L1",
 	"R, R1",
 	"L2",
 	"R2",
 	"L3",
 	"R3",
-	"Select, Nintendo -",
-	"Start, Nintendo +",
+	"Select, DualShock Share, Nintendo -",
+	"Start, DualShock Options, Nintendo +",
 	"D-Pad Up",
 	"D-Pad Down",
 	"D-Pad Left",
@@ -111,7 +111,7 @@ void ProjectSettingsEditor::_notification(int p_what) {
 			restart_close_button->set_icon(get_icon("Close", "EditorIcons"));
 			restart_container->add_style_override("panel", get_stylebox("bg", "Tree"));
 			restart_icon->set_texture(get_icon("StatusWarning", "EditorIcons"));
-			restart_label->add_color_override("font_color", get_color("error_color", "Editor"));
+			restart_label->add_color_override("font_color", get_color("warning_color", "Editor"));
 
 		} break;
 		case NOTIFICATION_POPUP_HIDE: {
@@ -181,7 +181,7 @@ void ProjectSettingsEditor::_action_edited() {
 			ti->set_text(0, old_name);
 			add_at = "input/" + old_name;
 
-			message->set_text(vformat(TTR("Action '%s' already exists!"), new_name));
+			message->set_text(vformat(TTR("An action with the name '%s' already exists."), new_name));
 			message->popup_centered(Size2(300, 100) * EDSCALE);
 			return;
 		}
@@ -257,7 +257,7 @@ void ProjectSettingsEditor::_device_input_add() {
 			Ref<InputEventJoypadMotion> jm;
 			jm.instance();
 			jm->set_axis(device_index->get_selected() >> 1);
-			jm->set_axis_value(device_index->get_selected() & 1 ? 1 : -1);
+			jm->set_axis_value((device_index->get_selected() & 1) ? 1 : -1);
 			jm->set_device(_get_current_device());
 
 			for (int i = 0; i < events.size(); i++) {
@@ -294,7 +294,8 @@ void ProjectSettingsEditor::_device_input_add() {
 			ie = jb;
 
 		} break;
-		default: {}
+		default: {
+		}
 	}
 
 	if (idx < 0 || idx >= events.size()) {
@@ -482,7 +483,7 @@ void ProjectSettingsEditor::_add_item(int p_item, Ref<InputEvent> p_exiting_even
 			for (int i = 0; i < JOY_AXIS_MAX * 2; i++) {
 
 				String desc = _axis_names[i];
-				device_index->add_item(TTR("Axis") + " " + itos(i / 2) + " " + (i & 1 ? "+" : "-") + desc);
+				device_index->add_item(TTR("Axis") + " " + itos(i / 2) + " " + ((i & 1) ? "+" : "-") + desc);
 			}
 			device_input->popup_centered_minsize(Size2(350, 95) * EDSCALE);
 
@@ -519,7 +520,8 @@ void ProjectSettingsEditor::_add_item(int p_item, Ref<InputEvent> p_exiting_even
 			}
 
 		} break;
-		default: {}
+		default: {
+		}
 	}
 }
 
@@ -791,15 +793,9 @@ void ProjectSettingsEditor::popup_project_settings() {
 	if (saved_size != Rect2()) {
 		popup(saved_size);
 	} else {
-
-		Size2 popup_size = Size2(900, 700) * editor_get_scale();
-		Size2 window_size = get_viewport_rect().size;
-
-		popup_size.x = MIN(window_size.x * 0.8, popup_size.x);
-		popup_size.y = MIN(window_size.y * 0.8, popup_size.y);
-
-		popup_centered(popup_size);
+		popup_centered_clamped(Size2(900, 700) * EDSCALE, 0.8);
 	}
+
 	globals_editor->update_category_list();
 	_update_translations();
 	autoload_settings->update_autoload();
@@ -812,7 +808,7 @@ void ProjectSettingsEditor::update_plugins() {
 
 void ProjectSettingsEditor::_item_selected(const String &p_path) {
 
-	String selected_path = p_path;
+	const String &selected_path = p_path;
 	if (selected_path == String())
 		return;
 	category->set_text(globals_editor->get_current_section());
@@ -925,7 +921,7 @@ void ProjectSettingsEditor::_action_check(String p_action) {
 		}
 		if (ProjectSettings::get_singleton()->has_setting("input/" + p_action)) {
 
-			action_add_error->set_text(TTR("Already existing"));
+			action_add_error->set_text(vformat(TTR("An action with the name '%s' already exists."), p_action));
 			action_add_error->show();
 			action_add->set_disabled(true);
 			return;
@@ -969,8 +965,6 @@ void ProjectSettingsEditor::_action_add() {
 	while (r->get_next())
 		r = r->get_next();
 
-	if (!r)
-		return;
 	r->select(0);
 	input_editor->ensure_cursor_is_visible();
 	action_add_error->hide();
@@ -1590,6 +1584,7 @@ void ProjectSettingsEditor::_toggle_search_bar(bool p_pressed) {
 		search_box->select_all();
 	} else {
 
+		search_box->clear();
 		search_bar->hide();
 		add_prop_bar->show();
 	}
@@ -1783,7 +1778,7 @@ ProjectSettingsEditor::ProjectSettingsEditor(EditorData *p_data) {
 	restart_icon->set_v_size_flags(SIZE_SHRINK_CENTER);
 	restart_hb->add_child(restart_icon);
 	restart_label = memnew(Label);
-	restart_label->set_text(TTR("Editor must be restarted for changes to take effect"));
+	restart_label->set_text(TTR("The editor must be restarted for changes to take effect."));
 	restart_hb->add_child(restart_label);
 	restart_hb->add_spacer();
 	Button *restart_button = memnew(Button);
@@ -2001,8 +1996,8 @@ ProjectSettingsEditor::ProjectSettingsEditor(EditorData *p_data) {
 		tvb->add_child(tmc);
 
 		translation_locale_filter_mode = memnew(OptionButton);
-		translation_locale_filter_mode->add_item(TTR("Show all locales"), SHOW_ALL_LOCALES);
-		translation_locale_filter_mode->add_item(TTR("Show only selected locales"), SHOW_ONLY_SELECTED_LOCALES);
+		translation_locale_filter_mode->add_item(TTR("Show All Locales"), SHOW_ALL_LOCALES);
+		translation_locale_filter_mode->add_item(TTR("Show Selected Locales Only"), SHOW_ONLY_SELECTED_LOCALES);
 		translation_locale_filter_mode->select(0);
 		tmc->add_margin_child(TTR("Filter mode:"), translation_locale_filter_mode);
 		translation_locale_filter_mode->connect("item_selected", this, "_translation_filter_mode_changed");

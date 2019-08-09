@@ -30,6 +30,7 @@
 
 #include "visual_script.h"
 
+#include "core/core_string_names.h"
 #include "core/os/os.h"
 #include "core/project_settings.h"
 #include "scene/main/node.h"
@@ -45,15 +46,7 @@ bool VisualScriptNode::is_breakpoint() const {
 	return breakpoint;
 }
 
-void VisualScriptNode::_notification(int p_what) {
-
-	if (p_what == NOTIFICATION_POSTINITIALIZE) {
-		validate_input_default_values();
-	}
-}
-
 void VisualScriptNode::ports_changed_notify() {
-	validate_input_default_values();
 	emit_signal("ports_changed");
 }
 
@@ -272,11 +265,7 @@ void VisualScript::_node_ports_changed(int p_id) {
 	Function &func = functions[function];
 	Ref<VisualScriptNode> vsn = func.nodes[p_id].node;
 
-	if (OS::get_singleton()->get_main_loop() &&
-			Object::cast_to<SceneTree>(OS::get_singleton()->get_main_loop()) &&
-			Engine::get_singleton()->is_editor_hint()) {
-		vsn->validate_input_default_values(); //force validate default values when editing on editor
-	}
+	vsn->validate_input_default_values();
 
 	//must revalidate all the functions
 
@@ -352,6 +341,7 @@ void VisualScript::add_node(const StringName &p_func, int p_id, const Ref<Visual
 	Ref<VisualScriptNode> vsn = p_node;
 	vsn->connect("ports_changed", this, "_node_ports_changed", varray(p_id));
 	vsn->scripts_used.insert(this);
+	vsn->validate_input_default_values(); // Validate when fully loaded
 
 	func.nodes[p_id] = nd;
 }
@@ -1497,7 +1487,7 @@ Variant VisualScriptInstance::_call_internal(const StringName &p_method, void *p
 	Variant **output_args = (Variant **)(input_args + max_input_args);
 	int flow_max = f->flow_stack_size;
 	int *flow_stack = flow_max ? (int *)(output_args + max_output_args) : (int *)NULL;
-	int *pass_stack = flow_stack + flow_max;
+	int *pass_stack = flow_stack ? (int *)(flow_stack + flow_max) : (int *)NULL;
 
 	String error_str;
 
@@ -1702,7 +1692,7 @@ Variant VisualScriptInstance::_call_internal(const StringName &p_method, void *p
 
 		if ((ret == output || ret & VisualScriptNodeInstance::STEP_FLAG_PUSH_STACK_BIT) && node->sequence_output_count) {
 			//if no exit bit was set, and has sequence outputs, guess next node
-			if (output < 0 || output >= node->sequence_output_count) {
+			if (output >= node->sequence_output_count) {
 				r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 				error_str = RTR("Node returned an invalid sequence output: ") + itos(output);
 				error = true;
@@ -1915,7 +1905,7 @@ Variant VisualScriptInstance::call(const StringName &p_method, const Variant **p
 	Variant **output_args = (Variant **)(input_args + max_input_args);
 	int flow_max = f->flow_stack_size;
 	int *flow_stack = flow_max ? (int *)(output_args + max_output_args) : (int *)NULL;
-	int *pass_stack = flow_stack + flow_max;
+	int *pass_stack = flow_stack ? (int *)(flow_stack + flow_max) : (int *)NULL;
 
 	for (int i = 0; i < f->node_count; i++) {
 		sequence_bits[i] = false; //all starts as false
@@ -1974,6 +1964,27 @@ void VisualScriptInstance::notification(int p_notification) {
 	const Variant *whatp = &what;
 	Variant::CallError ce;
 	call(VisualScriptLanguage::singleton->notification, &whatp, 1, ce); //do as call
+}
+
+String VisualScriptInstance::to_string(bool *r_valid) {
+	if (has_method(CoreStringNames::get_singleton()->_to_string)) {
+		Variant::CallError ce;
+		Variant ret = call(CoreStringNames::get_singleton()->_to_string, NULL, 0, ce);
+		if (ce.error == Variant::CallError::CALL_OK) {
+			if (ret.get_type() != Variant::STRING) {
+				if (r_valid)
+					*r_valid = false;
+				ERR_EXPLAIN("Wrong type for " + CoreStringNames::get_singleton()->_to_string + ", must be a String.");
+				ERR_FAIL_V(String());
+			}
+			if (r_valid)
+				*r_valid = true;
+			return ret.operator String();
+		}
+	}
+	if (r_valid)
+		*r_valid = false;
+	return String();
 }
 
 Ref<Script> VisualScriptInstance::get_script() const {
@@ -2618,8 +2629,6 @@ void VisualScriptLanguage::debug_get_globals(List<String> *p_locals, List<Varian
 }
 String VisualScriptLanguage::debug_parse_stack_level_expression(int p_level, const String &p_expression, int p_max_subitems, int p_max_depth) {
 
-	if (_debug_parse_err_node >= 0)
-		return "";
 	return "";
 }
 

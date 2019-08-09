@@ -19,8 +19,6 @@
 	<tutorials>
 		<link>https://docs.godotengine.org/en/latest/getting_started/scripting/gdscript/gdscript_basics.html#dictionary</link>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 		<method name="clear">
 			<description>
@@ -40,7 +38,7 @@
 			<return type="bool">
 			</return>
 			<description>
-				Return true if the dictionary is empty.
+				Returns [code]true[/code] if the dictionary is empty.
 			</description>
 		</method>
 		<method name="erase">
@@ -49,7 +47,7 @@
 			<argument index="0" name="key" type="Variant">
 			</argument>
 			<description>
-				Erase a dictionary key/value pair by key. Do not erase elements while iterating over the dictionary.
+				Erase a dictionary key/value pair by key. Returns [code]true[/code] if the given key was present in the dictionary, [code]false[/code] otherwise. Does not erase elements while iterating over the dictionary.
 			</description>
 		</method>
 		<method name="get">
@@ -60,7 +58,7 @@
 			<argument index="1" name="default" type="Variant" default="Null">
 			</argument>
 			<description>
-				Returns the current value for the specified key in the [code]Dictionary[/code]. If the key does not exist, the method returns the value of the optional default argument, or Null if it is omitted.
+				Returns the current value for the specified key in the [Dictionary]. If the key does not exist, the method returns the value of the optional default argument, or [code]null[/code] if it is omitted.
 			</description>
 		</method>
 		<method name="has">
@@ -69,7 +67,7 @@
 			<argument index="0" name="key" type="Variant">
 			</argument>
 			<description>
-				Return true if the dictionary has a given key.
+				Returns [code]true[/code] if the dictionary has a given key.
 			</description>
 		</method>
 		<method name="has_all">
@@ -78,35 +76,35 @@
 			<argument index="0" name="keys" type="Array">
 			</argument>
 			<description>
-				Return true if the dictionary has all of the keys in the given array.
+				Returns [code]true[/code] if the dictionary has all of the keys in the given array.
 			</description>
 		</method>
 		<method name="hash">
 			<return type="int">
 			</return>
 			<description>
-				Return a hashed integer value representing the dictionary contents.
+				Returns a hashed integer value representing the dictionary contents.
 			</description>
 		</method>
 		<method name="keys">
 			<return type="Array">
 			</return>
 			<description>
-				Return the list of keys in the [code]Dictionary[/code].
+				Returns the list of keys in the [Dictionary].
 			</description>
 		</method>
 		<method name="size">
 			<return type="int">
 			</return>
 			<description>
-				Return the size of the dictionary (in pairs).
+				Returns the size of the dictionary (in pairs).
 			</description>
 		</method>
 		<method name="values">
 			<return type="Array">
 			</return>
 			<description>
-				Return the list of values in the [code]Dictionary[/code].
+				Returns the list of values in the [Dictionary].
 			</description>
 		</method>
 	</methods>

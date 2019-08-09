@@ -4,16 +4,14 @@
 		Tint the entire canvas.
 	</brief_description>
 	<description>
-		[code]CanvasModulate[/code] tints the canvas elements using its assigned [code]color[/code].
+		[CanvasModulate] tints the canvas elements using its assigned [member color].
 	</description>
 	<tutorials>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 	</methods>
 	<members>
-		<member name="color" type="Color" setter="set_color" getter="get_color">
+		<member name="color" type="Color" setter="set_color" getter="get_color" default="Color( 1, 1, 1, 1 )">
 			The tint color to apply.
 		</member>
 	</members>

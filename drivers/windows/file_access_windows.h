@@ -47,6 +47,7 @@ class FileAccessWindows : public FileAccess {
 	FILE *f;
 	int flags;
 	void check_errors() const;
+	mutable int prev_op;
 	mutable Error last_error;
 	String path;
 	String path_src;
@@ -79,6 +80,8 @@ public:
 	virtual bool file_exists(const String &p_name); ///< return true if a file exists
 
 	uint64_t _get_modified_time(const String &p_file);
+	virtual uint32_t _get_unix_permissions(const String &p_file);
+	virtual Error _set_unix_permissions(const String &p_file, uint32_t p_permissions);
 
 	FileAccessWindows();
 	virtual ~FileAccessWindows();

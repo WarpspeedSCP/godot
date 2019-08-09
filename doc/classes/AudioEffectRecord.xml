@@ -6,8 +6,6 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 		<method name="get_recording" qualifiers="const">
 			<return type="AudioStreamSample">
@@ -31,7 +29,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="format" type="int" setter="set_format" getter="get_format" enum="AudioStreamSample.Format">
+		<member name="format" type="int" setter="set_format" getter="get_format" enum="AudioStreamSample.Format" default="1">
 		</member>
 	</members>
 	<constants>

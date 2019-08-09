@@ -40,12 +40,14 @@
 class Camera;
 class AudioStreamPlayer3D : public Spatial {
 
-	GDCLASS(AudioStreamPlayer3D, Spatial)
+	GDCLASS(AudioStreamPlayer3D, Spatial);
+
 public:
 	enum AttenuationModel {
 		ATTENUATION_INVERSE_DISTANCE,
 		ATTENUATION_INVERSE_SQUARE_DISTANCE,
 		ATTENUATION_LOGARITHMIC,
+		ATTENUATION_DISABLED,
 	};
 
 	enum OutOfRangeMode {
@@ -69,7 +71,7 @@ private:
 	struct Output {
 
 		AudioFilterSW filter;
-		AudioFilterSW::Processor filter_process[6];
+		AudioFilterSW::Processor filter_process[8];
 		AudioFrame vol[4];
 		float filter_gain;
 		float pitch_scale;
@@ -109,11 +111,11 @@ private:
 	float pitch_scale;
 	bool autoplay;
 	bool stream_paused;
-	bool stream_fade_in;
-	bool stream_fade_out;
-	bool stream_stop;
+	bool stream_paused_fade_in;
+	bool stream_paused_fade_out;
 	StringName bus;
 
+	static void _calc_output_vol(const Vector3 &source_dir, real_t tightness, Output &output);
 	void _mix_audio();
 	static void _mix_audios(void *self) { reinterpret_cast<AudioStreamPlayer3D *>(self)->_mix_audio(); }
 
@@ -205,6 +207,8 @@ public:
 
 	void set_stream_paused(bool p_pause);
 	bool get_stream_paused() const;
+
+	Ref<AudioStreamPlayback> get_stream_playback();
 
 	AudioStreamPlayer3D();
 	~AudioStreamPlayer3D();

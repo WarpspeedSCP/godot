@@ -80,6 +80,7 @@ private:
 	int current_action;
 	int action_level;
 	MergeMode merge_mode;
+	bool merging;
 	uint64_t version;
 
 	void _pop_history_tail();
@@ -94,7 +95,7 @@ private:
 	MethodNotifyCallback method_callback;
 	PropertyNotifyCallback property_callback;
 
-	int commiting;
+	int committing;
 
 protected:
 	static void _bind_methods();
@@ -109,13 +110,16 @@ public:
 	void add_do_reference(Object *p_object);
 	void add_undo_reference(Object *p_object);
 
-	bool is_commiting_action() const;
+	bool is_committing_action() const;
 	void commit_action();
 
 	bool redo();
 	bool undo();
 	String get_current_action_name() const;
 	void clear_history(bool p_increase_version = true);
+
+	bool has_undo();
+	bool has_redo();
 
 	uint64_t get_version() const;
 

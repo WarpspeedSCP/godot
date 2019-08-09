@@ -52,7 +52,7 @@ void CollisionObject::_notification(int p_what) {
 
 			_update_pickable();
 			//get space
-		};
+		} break;
 
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 
@@ -259,9 +259,9 @@ void CollisionObject::shape_owner_add_shape(uint32_t p_owner, const Ref<Shape> &
 	s.index = total_subshapes;
 	s.shape = p_shape;
 	if (area) {
-		PhysicsServer::get_singleton()->area_add_shape(rid, p_shape->get_rid(), sd.xform);
+		PhysicsServer::get_singleton()->area_add_shape(rid, p_shape->get_rid(), sd.xform, sd.disabled);
 	} else {
-		PhysicsServer::get_singleton()->body_add_shape(rid, p_shape->get_rid(), sd.xform);
+		PhysicsServer::get_singleton()->body_add_shape(rid, p_shape->get_rid(), sd.xform, sd.disabled);
 	}
 	sd.shapes.push_back(s);
 
@@ -370,8 +370,8 @@ String CollisionObject::get_configuration_warning() const {
 	String warning = Spatial::get_configuration_warning();
 
 	if (shapes.empty()) {
-		if (warning == String()) {
-			warning += "\n";
+		if (!warning.empty()) {
+			warning += "\n\n";
 		}
 		warning += TTR("This node has no shape, so it can't collide or interact with other objects.\nConsider adding a CollisionShape or CollisionPolygon as a child to define its shape.");
 	}

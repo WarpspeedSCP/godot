@@ -12,12 +12,10 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 	</methods>
 	<members>
-		<member name="var_name" type="String" setter="set_variable" getter="get_variable">
+		<member name="var_name" type="String" setter="set_variable" getter="get_variable" default="&quot;&quot;">
 			The variable's name.
 		</member>
 	</members>

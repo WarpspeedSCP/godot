@@ -37,6 +37,8 @@
 
 #include <stdlib.h>
 
+Mesh::ConvexDecompositionFunc Mesh::convex_composition_function = NULL;
+
 Ref<TriangleMesh> Mesh::generate_triangle_mesh() const {
 
 	if (triangle_mesh.is_valid())
@@ -96,7 +98,7 @@ Ref<TriangleMesh> Mesh::generate_triangle_mesh() const {
 		}
 	}
 
-	facesw = PoolVector<Vector3>::Write();
+	facesw.release();
 
 	triangle_mesh = Ref<TriangleMesh>(memnew(TriangleMesh));
 	triangle_mesh->create(faces);
@@ -434,7 +436,7 @@ Ref<Mesh> Mesh::create_outline(float p_margin) const {
 			r[i] = t;
 		}
 
-		r = PoolVector<Vector3>::Write();
+		r.release();
 		arrays[ARRAY_VERTEX] = vertices;
 
 		if (!has_indices) {
@@ -450,7 +452,7 @@ Ref<Mesh> Mesh::create_outline(float p_margin) const {
 				iw[j + 2] = j + 1;
 			}
 
-			iw = PoolVector<int>::Write();
+			iw.release();
 			arrays[ARRAY_INDEX] = new_indices;
 
 		} else {
@@ -459,7 +461,7 @@ Ref<Mesh> Mesh::create_outline(float p_margin) const {
 
 				SWAP(ir[j + 1], ir[j + 2]);
 			}
-			ir = PoolVector<int>::Write();
+			ir.release();
 			arrays[ARRAY_INDEX] = indices;
 		}
 	}
@@ -487,6 +489,7 @@ void Mesh::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_surface_count"), &Mesh::get_surface_count);
 	ClassDB::bind_method(D_METHOD("surface_get_arrays", "surf_idx"), &Mesh::surface_get_arrays);
 	ClassDB::bind_method(D_METHOD("surface_get_blend_shape_arrays", "surf_idx"), &Mesh::surface_get_blend_shape_arrays);
+	ClassDB::bind_method(D_METHOD("surface_set_material", "surf_idx", "material"), &Mesh::surface_set_material);
 	ClassDB::bind_method(D_METHOD("surface_get_material", "surf_idx"), &Mesh::surface_get_material);
 
 	BIND_ENUM_CONSTANT(PRIMITIVE_POINTS);
@@ -541,6 +544,49 @@ void Mesh::_bind_methods() {
 void Mesh::clear_cache() const {
 	triangle_mesh.unref();
 	debug_lines.clear();
+}
+
+Vector<Ref<Shape> > Mesh::convex_decompose() const {
+
+	ERR_FAIL_COND_V(!convex_composition_function, Vector<Ref<Shape> >());
+
+	PoolVector<Face3> faces = get_faces();
+	Vector<Face3> f3;
+	f3.resize(faces.size());
+	PoolVector<Face3>::Read f = faces.read();
+	for (int i = 0; i < f3.size(); i++) {
+		f3.write[i] = f[i];
+	}
+
+	Vector<Vector<Face3> > decomposed = convex_composition_function(f3);
+
+	Vector<Ref<Shape> > ret;
+
+	for (int i = 0; i < decomposed.size(); i++) {
+		Set<Vector3> points;
+		for (int j = 0; j < decomposed[i].size(); j++) {
+			points.insert(decomposed[i][j].vertex[0]);
+			points.insert(decomposed[i][j].vertex[1]);
+			points.insert(decomposed[i][j].vertex[2]);
+		}
+
+		PoolVector<Vector3> convex_points;
+		convex_points.resize(points.size());
+		{
+			PoolVector<Vector3>::Write w = convex_points.write();
+			int idx = 0;
+			for (Set<Vector3>::Element *E = points.front(); E; E = E->next()) {
+				w[idx++] = E->get();
+			}
+		}
+
+		Ref<ConvexPolygonShape> shape;
+		shape.instance();
+		shape->set_points(convex_points);
+		ret.push_back(shape);
+	}
+
+	return ret;
 }
 
 Mesh::Mesh() {
@@ -1260,7 +1306,6 @@ void ArrayMesh::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("surface_get_array_index_len", "surf_idx"), &ArrayMesh::surface_get_array_index_len);
 	ClassDB::bind_method(D_METHOD("surface_get_format", "surf_idx"), &ArrayMesh::surface_get_format);
 	ClassDB::bind_method(D_METHOD("surface_get_primitive_type", "surf_idx"), &ArrayMesh::surface_get_primitive_type);
-	ClassDB::bind_method(D_METHOD("surface_set_material", "surf_idx", "material"), &ArrayMesh::surface_set_material);
 	ClassDB::bind_method(D_METHOD("surface_find_by_name", "name"), &ArrayMesh::surface_find_by_name);
 	ClassDB::bind_method(D_METHOD("surface_set_name", "surf_idx", "name"), &ArrayMesh::surface_set_name);
 	ClassDB::bind_method(D_METHOD("surface_get_name", "surf_idx"), &ArrayMesh::surface_get_name);

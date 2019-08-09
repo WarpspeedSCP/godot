@@ -12,12 +12,10 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 	</methods>
 	<members>
-		<member name="signal" type="String" setter="set_signal" getter="get_signal">
+		<member name="signal" type="String" setter="set_signal" getter="get_signal" default="&quot;&quot;">
 			The signal to emit.
 		</member>
 	</members>

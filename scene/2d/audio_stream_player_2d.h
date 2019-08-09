@@ -37,7 +37,7 @@
 
 class AudioStreamPlayer2D : public Node2D {
 
-	GDCLASS(AudioStreamPlayer2D, Node2D)
+	GDCLASS(AudioStreamPlayer2D, Node2D);
 
 private:
 	enum {
@@ -73,9 +73,8 @@ private:
 	float pitch_scale;
 	bool autoplay;
 	bool stream_paused;
-	bool stream_fade_in;
-	bool stream_fade_out;
-	bool stream_stop;
+	bool stream_paused_fade_in;
+	bool stream_paused_fade_out;
 	StringName bus;
 
 	void _mix_audio();
@@ -129,6 +128,8 @@ public:
 
 	void set_stream_paused(bool p_pause);
 	bool get_stream_paused() const;
+
+	Ref<AudioStreamPlayback> get_stream_playback();
 
 	AudioStreamPlayer2D();
 	~AudioStreamPlayer2D();

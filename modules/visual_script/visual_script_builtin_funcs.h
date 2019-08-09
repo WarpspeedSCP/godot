@@ -35,7 +35,8 @@
 
 class VisualScriptBuiltinFunc : public VisualScriptNode {
 
-	GDCLASS(VisualScriptBuiltinFunc, VisualScriptNode)
+	GDCLASS(VisualScriptBuiltinFunc, VisualScriptNode);
+
 public:
 	enum BuiltinFunc {
 		MATH_SIN,
@@ -67,6 +68,7 @@ public:
 		MATH_LERP,
 		MATH_INVERSE_LERP,
 		MATH_RANGE_LERP,
+		MATH_MOVE_TOWARD,
 		MATH_DECTIME,
 		MATH_RANDOMIZE,
 		MATH_RAND,
@@ -101,6 +103,9 @@ public:
 		VAR_TO_BYTES,
 		BYTES_TO_VAR,
 		COLORN,
+		MATH_SMOOTHSTEP,
+		MATH_POSMOD,
+		MATH_LERP_ANGLE,
 		FUNC_MAX
 	};
 

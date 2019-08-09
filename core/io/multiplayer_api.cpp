@@ -46,7 +46,8 @@ _FORCE_INLINE_ bool _should_call_local(MultiplayerAPI::RPCMode mode, bool is_mas
 		case MultiplayerAPI::RPC_MODE_MASTERSYNC: {
 			if (is_master)
 				r_skip_rpc = true; // I am the master, so skip remote call.
-		} // Do not break, fall over to other sync.
+			FALLTHROUGH;
+		}
 		case MultiplayerAPI::RPC_MODE_REMOTESYNC:
 		case MultiplayerAPI::RPC_MODE_PUPPETSYNC: {
 			// Call it, sync always results in a local call.
@@ -282,8 +283,9 @@ void MultiplayerAPI::_process_rpc(Node *p_node, const StringName &p_name, int p_
 		rpc_mode = p_node->get_script_instance()->get_rpc_mode(p_name);
 	}
 
-	ERR_EXPLAIN("RPC '" + String(p_name) + "' is not allowed from: " + itos(p_from) + ". Mode is " + itos((int)rpc_mode) + ", master is " + itos(p_node->get_network_master()) + ".");
-	ERR_FAIL_COND(!_can_call_mode(p_node, rpc_mode, p_from));
+	bool can_call = _can_call_mode(p_node, rpc_mode, p_from);
+	ERR_EXPLAIN("RPC '" + String(p_name) + "' is not allowed on node " + p_node->get_path() + " from: " + itos(p_from) + ". Mode is " + itos((int)rpc_mode) + ", master is " + itos(p_node->get_network_master()) + ".");
+	ERR_FAIL_COND(!can_call);
 
 	int argc = p_packet[p_offset];
 	Vector<Variant> args;
@@ -331,8 +333,9 @@ void MultiplayerAPI::_process_rset(Node *p_node, const StringName &p_name, int p
 		rset_mode = p_node->get_script_instance()->get_rset_mode(p_name);
 	}
 
-	ERR_EXPLAIN("RSET '" + String(p_name) + "' is not allowed from: " + itos(p_from) + ". Mode is " + itos((int)rset_mode) + ", master is " + itos(p_node->get_network_master()) + ".");
-	ERR_FAIL_COND(!_can_call_mode(p_node, rset_mode, p_from));
+	bool can_call = _can_call_mode(p_node, rset_mode, p_from);
+	ERR_EXPLAIN("RSET '" + String(p_name) + "' is not allowed on node " + p_node->get_path() + " from: " + itos(p_from) + ". Mode is " + itos((int)rset_mode) + ", master is " + itos(p_node->get_network_master()) + ".");
+	ERR_FAIL_COND(!can_call);
 
 	Variant value;
 	Error err = decode_variant(value, &p_packet[p_offset], p_packet_len - p_offset, NULL, allow_object_decoding || network_peer->is_object_decoding_allowed());
@@ -631,7 +634,7 @@ void MultiplayerAPI::rpcp(Node *p_node, int p_peer_id, bool p_unreliable, const 
 	ERR_FAIL_COND(network_peer->get_connection_status() != NetworkedMultiplayerPeer::CONNECTION_CONNECTED);
 
 	int node_id = network_peer->get_unique_id();
-	bool skip_rpc = false;
+	bool skip_rpc = node_id == p_peer_id;
 	bool call_local_native = false;
 	bool call_local_script = false;
 	bool is_master = p_node->is_network_master();
@@ -658,8 +661,11 @@ void MultiplayerAPI::rpcp(Node *p_node, int p_peer_id, bool p_unreliable, const 
 	}
 
 	if (call_local_native) {
+		int temp_id = rpc_sender_id;
+		rpc_sender_id = get_network_unique_id();
 		Variant::CallError ce;
 		p_node->call(p_method, p_arg, p_argcount, ce);
+		rpc_sender_id = temp_id;
 		if (ce.error != Variant::CallError::CALL_OK) {
 			String error = Variant::get_call_error_text(p_node, p_method, p_arg, p_argcount, ce);
 			error = "rpc() aborted in local call:  - " + error;
@@ -669,9 +675,12 @@ void MultiplayerAPI::rpcp(Node *p_node, int p_peer_id, bool p_unreliable, const 
 	}
 
 	if (call_local_script) {
+		int temp_id = rpc_sender_id;
+		rpc_sender_id = get_network_unique_id();
 		Variant::CallError ce;
 		ce.error = Variant::CallError::CALL_OK;
 		p_node->get_script_instance()->call(p_method, p_arg, p_argcount, ce);
+		rpc_sender_id = temp_id;
 		if (ce.error != Variant::CallError::CALL_OK) {
 			String error = Variant::get_call_error_text(p_node, p_method, p_arg, p_argcount, ce);
 			error = "rpc() aborted in script local call:  - " + error;
@@ -679,6 +688,9 @@ void MultiplayerAPI::rpcp(Node *p_node, int p_peer_id, bool p_unreliable, const 
 			return;
 		}
 	}
+
+	ERR_EXPLAIN("RPC '" + p_method + "' on yourself is not allowed by selected mode");
+	ERR_FAIL_COND(skip_rpc && !(call_local_native || call_local_script));
 }
 
 void MultiplayerAPI::rsetp(Node *p_node, int p_peer_id, bool p_unreliable, const StringName &p_property, const Variant &p_value) {
@@ -692,13 +704,11 @@ void MultiplayerAPI::rsetp(Node *p_node, int p_peer_id, bool p_unreliable, const
 
 	int node_id = network_peer->get_unique_id();
 	bool is_master = p_node->is_network_master();
-	bool skip_rset = false;
+	bool skip_rset = node_id == p_peer_id;
+	bool set_local = false;
 
 	if (p_peer_id == 0 || p_peer_id == node_id || (p_peer_id < 0 && p_peer_id != -node_id)) {
 		// Check that send mode can use local call.
-
-		bool set_local = false;
-
 		const Map<StringName, RPCMode>::Element *E = p_node->get_node_rset_mode(p_property);
 		if (E) {
 
@@ -707,7 +717,11 @@ void MultiplayerAPI::rsetp(Node *p_node, int p_peer_id, bool p_unreliable, const
 
 		if (set_local) {
 			bool valid;
+			int temp_id = rpc_sender_id;
+
+			rpc_sender_id = get_network_unique_id();
 			p_node->set(p_property, p_value, &valid);
+			rpc_sender_id = temp_id;
 
 			if (!valid) {
 				String error = "rset() aborted in local set, property not found:  - " + String(p_property);
@@ -721,8 +735,11 @@ void MultiplayerAPI::rsetp(Node *p_node, int p_peer_id, bool p_unreliable, const
 			set_local = _should_call_local(rpc_mode, is_master, skip_rset);
 
 			if (set_local) {
+				int temp_id = rpc_sender_id;
 
+				rpc_sender_id = get_network_unique_id();
 				bool valid = p_node->get_script_instance()->set(p_property, p_value);
+				rpc_sender_id = temp_id;
 
 				if (!valid) {
 					String error = "rset() aborted in local script set, property not found:  - " + String(p_property);
@@ -733,8 +750,11 @@ void MultiplayerAPI::rsetp(Node *p_node, int p_peer_id, bool p_unreliable, const
 		}
 	}
 
-	if (skip_rset)
+	if (skip_rset) {
+		ERR_EXPLAIN("RSET for '" + p_property + "' on yourself is not allowed by selected mode");
+		ERR_FAIL_COND(!set_local);
 		return;
+	}
 
 	const Variant *vptr = &p_value;
 
@@ -854,6 +874,7 @@ void MultiplayerAPI::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "allow_object_decoding"), "set_allow_object_decoding", "is_object_decoding_allowed");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "refuse_new_network_connections"), "set_refuse_new_network_connections", "is_refusing_new_network_connections");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "network_peer", PROPERTY_HINT_RESOURCE_TYPE, "NetworkedMultiplayerPeer", 0), "set_network_peer", "get_network_peer");
+	ADD_PROPERTY_DEFAULT("refuse_new_network_connections", false);
 
 	ADD_SIGNAL(MethodInfo("network_peer_connected", PropertyInfo(Variant::INT, "id")));
 	ADD_SIGNAL(MethodInfo("network_peer_disconnected", PropertyInfo(Variant::INT, "id")));

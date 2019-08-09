@@ -388,9 +388,8 @@ bool Color::html_is_valid(const String &p_color) {
 		return false;
 	}
 
-	int a = 255;
 	if (alpha) {
-		a = _parse_col(color, 0);
+		int a = _parse_col(color, 0);
 		if (a < 0) {
 			return false;
 		}
@@ -525,7 +524,7 @@ Color Color::from_hsv(float p_h, float p_s, float p_v, float p_a) const {
 float Color::gray() const {
 
 	ERR_EXPLAIN("Color.gray() is deprecated and will be removed in a future version. Use Color.get_v() for a better grayscale approximation.");
-	WARN_DEPRECATED
+	WARN_DEPRECATED;
 	return (r + g + b) / 3.0;
 }
 

@@ -1,6 +1,5 @@
 import methods
 import os
-import sys
 
 
 def is_active():
@@ -197,10 +196,12 @@ def configure_msvc(env, manual_msvc_config):
     ## Compile/link flags
 
     env.AppendUnique(CCFLAGS=['/MT', '/Gd', '/GR', '/nologo'])
+    if int(env['MSVC_VERSION'].split('.')[0]) >= 14: #vs2015 and later
+        env.AppendUnique(CCFLAGS=['/utf-8'])
     env.AppendUnique(CXXFLAGS=['/TP']) # assume all sources are C++
     if manual_msvc_config: # should be automatic if SCons found it
         if os.getenv("WindowsSdkDir") is not None:
-            env.Append(CPPPATH=[os.getenv("WindowsSdkDir") + "/Include"])
+            env.Prepend(CPPPATH=[os.getenv("WindowsSdkDir") + "/Include"])
         else:
             print("Missing environment variable: WindowsSdkDir")
 
@@ -238,7 +239,7 @@ def configure_msvc(env, manual_msvc_config):
             env.AppendUnique(LINKFLAGS=['/LTCG'])
 
     if manual_msvc_config:
-        env.Append(CPPPATH=[p for p in os.getenv("INCLUDE").split(";")])
+        env.Prepend(CPPPATH=[p for p in os.getenv("INCLUDE").split(";")])
         env.Append(LIBPATH=[p for p in os.getenv("LIB").split(";")])
 
     # Incremental linking fix
@@ -272,7 +273,8 @@ def configure_mingw(env):
            env.Prepend(CCFLAGS=['-g2'])
 
     elif (env["target"] == "release_debug"):
-        env.Append(CCFLAGS=['-O2', '-DDEBUG_ENABLED'])
+        env.Append(CCFLAGS=['-O2'])
+        env.Append(CPPDEFINES=['DEBUG_ENABLED'])
         if (env["debug_symbols"] == "yes"):
            env.Prepend(CCFLAGS=['-g1'])
         if (env["debug_symbols"] == "full"):
@@ -283,7 +285,8 @@ def configure_mingw(env):
            env.Prepend(CCFLAGS=['-Os'])
 
     elif (env["target"] == "debug"):
-        env.Append(CCFLAGS=['-g3', '-DDEBUG_ENABLED', '-DDEBUG_MEMORY_ENABLED'])
+        env.Append(CCFLAGS=['-g3'])
+        env.Append(CPPDEFINES=['DEBUG_ENABLED', 'DEBUG_MEMORY_ENABLED'])
 
     ## Compiler configuration
 
@@ -324,21 +327,19 @@ def configure_mingw(env):
 
     ## Compile flags
 
-    env.Append(CCFLAGS=['-DWINDOWS_ENABLED', '-mwindows'])
-    env.Append(CCFLAGS=['-DOPENGL_ENABLED'])
-    env.Append(CCFLAGS=['-DWASAPI_ENABLED'])
-    env.Append(CCFLAGS=['-DWINMIDI_ENABLED'])
-    env.Append(CCFLAGS=['-DWINVER=%s' % env['target_win_version'], '-D_WIN32_WINNT=%s' % env['target_win_version']])
-    env.Append(LIBS=['mingw32', 'opengl32', 'dsound', 'ole32', 'd3d9', 'winmm', 'gdi32', 'iphlpapi', 'shlwapi', 'wsock32', 'ws2_32', 'kernel32', 'oleaut32', 'dinput8', 'dxguid', 'ksuser', 'imm32', 'bcrypt','avrt'])
+    env.Append(CCFLAGS=['-mwindows'])
+    env.Append(CPPDEFINES=['WINDOWS_ENABLED', 'OPENGL_ENABLED', 'WASAPI_ENABLED', 'WINMIDI_ENABLED'])
+    env.Append(CPPDEFINES=[('WINVER', env['target_win_version']), ('_WIN32_WINNT', env['target_win_version'])])
+    env.Append(LIBS=['mingw32', 'opengl32', 'dsound', 'ole32', 'd3d9', 'winmm', 'gdi32', 'iphlpapi', 'shlwapi', 'wsock32', 'ws2_32', 'kernel32', 'oleaut32', 'dinput8', 'dxguid', 'ksuser', 'imm32', 'bcrypt', 'avrt', 'uuid'])
 
-    env.Append(CPPFLAGS=['-DMINGW_ENABLED'])
+    env.Append(CPPDEFINES=['MINGW_ENABLED'])
 
     # resrc
     env.Append(BUILDERS={'RES': env.Builder(action=build_res_file, suffix='.o', src_suffix='.rc')})
 
 def configure(env):
     # At this point the env has been set up with basic tools/compilers.
-    env.Append(CPPPATH=['#platform/windows'])
+    env.Prepend(CPPPATH=['#platform/windows'])
 
     print("Configuring for Windows: target=%s, bits=%s" % (env['target'], env['bits']))
 

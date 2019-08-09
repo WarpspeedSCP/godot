@@ -139,8 +139,8 @@ private:
 		bool operator()(const Control *p_a, const Control *p_b) const {
 			if (p_a->get_canvas_layer() == p_b->get_canvas_layer())
 				return p_b->is_greater_than(p_a);
-			else
-				return p_a->get_canvas_layer() < p_b->get_canvas_layer();
+
+			return p_a->get_canvas_layer() < p_b->get_canvas_layer();
 		}
 	};
 
@@ -217,6 +217,9 @@ private:
 	Control *_get_focus_neighbour(Margin p_margin, int p_count = 0);
 
 	void _set_anchor(Margin p_margin, float p_anchor);
+	void _set_position(const Point2 &p_point);
+	void _set_global_position(const Point2 &p_point);
+	void _set_size(const Size2 &p_size);
 
 	void _propagate_theme_changed(CanvasItem *p_at, Control *p_owner, bool p_assign = true);
 	void _theme_changed();
@@ -227,8 +230,8 @@ private:
 	void _update_scroll();
 	void _resize(const Size2 &p_size);
 
-	Rect2 _compute_child_rect(const float p_anchors[4], const float p_margins[4]) const;
 	void _compute_margins(Rect2 p_rect, const float p_anchors[4], float (&r_margins)[4]);
+	void _compute_anchors(Rect2 p_rect, const float p_margins[4], float (&r_anchors)[4]);
 
 	void _size_changed();
 	String _get_tooltip() const;
@@ -325,7 +328,7 @@ public:
 
 	/* POSITIONING */
 
-	void set_anchors_preset(LayoutPreset p_preset, bool p_keep_margin = true);
+	void set_anchors_preset(LayoutPreset p_preset, bool p_keep_margins = true);
 	void set_margins_preset(LayoutPreset p_preset, LayoutPresetMode p_resize_mode = PRESET_MODE_MINSIZE, int p_margin = 0);
 	void set_anchors_and_margins_preset(LayoutPreset p_preset, LayoutPresetMode p_resize_mode = PRESET_MODE_MINSIZE, int p_margin = 0);
 
@@ -343,12 +346,12 @@ public:
 	Point2 get_begin() const;
 	Point2 get_end() const;
 
-	void set_position(const Point2 &p_point);
-	void set_global_position(const Point2 &p_point);
+	void set_position(const Point2 &p_point, bool p_keep_margins = false);
+	void set_global_position(const Point2 &p_point, bool p_keep_margins = false);
 	Point2 get_position() const;
 	Point2 get_global_position() const;
 
-	void set_size(const Size2 &p_size);
+	void set_size(const Size2 &p_size, bool p_keep_margins = false);
 	Size2 get_size() const;
 
 	Rect2 get_rect() const;
@@ -483,6 +486,7 @@ public:
 	bool is_visibility_clip_disabled() const;
 
 	virtual void get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const;
+	virtual String get_configuration_warning() const;
 
 	Control();
 	~Control();

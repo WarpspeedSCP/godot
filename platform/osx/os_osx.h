@@ -31,6 +31,7 @@
 #ifndef OS_OSX_H
 #define OS_OSX_H
 
+#include "camera_osx.h"
 #include "core/os/input.h"
 #include "crash_handler_osx.h"
 #include "drivers/coreaudio/audio_driver_coreaudio.h"
@@ -60,6 +61,7 @@ public:
 		unsigned int osx_state;
 		bool pressed;
 		bool echo;
+		bool raw;
 		uint32_t scancode;
 		uint32_t unicode;
 	};
@@ -71,6 +73,8 @@ public:
 	//  rasterizer seems to no longer be given to visual server, its using GLES3 directly?
 	//Rasterizer *rasterizer;
 	VisualServer *visual_server;
+
+	CameraServer *camera_server;
 
 	List<String> args;
 	MainLoop *main_loop;
@@ -115,6 +119,7 @@ public:
 
 	CursorShape cursor_shape;
 	NSCursor *cursors[CURSOR_MAX];
+	Map<CursorShape, Vector<Variant> > cursors_cache;
 	MouseMode mouse_mode;
 
 	String title;
@@ -132,6 +137,9 @@ public:
 	bool im_active;
 	String im_text;
 	Point2 im_selection;
+
+	Size2 min_size;
+	Size2 max_size;
 
 	PowerOSX *power_manager;
 
@@ -165,13 +173,14 @@ public:
 
 	void wm_minimized(bool p_minimized);
 
-	virtual String get_name();
+	virtual String get_name() const;
 
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
 
 	virtual Error open_dynamic_library(const String p_path, void *&p_library_handle, bool p_also_set_library_path = false);
 
 	virtual void set_cursor_shape(CursorShape p_shape);
+	virtual CursorShape get_cursor_shape() const;
 	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 
 	virtual void set_mouse_show(bool p_show);
@@ -180,11 +189,13 @@ public:
 	virtual void warp_mouse_position(const Point2 &p_to);
 	virtual Point2 get_mouse_position() const;
 	virtual int get_mouse_button_state() const;
+	void update_real_mouse_position();
 	virtual void set_window_title(const String &p_title);
 
 	virtual Size2 get_window_size() const;
 	virtual Size2 get_real_window_size() const;
 
+	virtual void set_native_icon(const String &p_filename);
 	virtual void set_icon(const Ref<Image> &p_icon);
 
 	virtual MainLoop *get_main_loop() const;
@@ -229,6 +240,10 @@ public:
 
 	virtual Point2 get_window_position() const;
 	virtual void set_window_position(const Point2 &p_position);
+	virtual Size2 get_max_window_size() const;
+	virtual Size2 get_min_window_size() const;
+	virtual void set_min_window_size(const Size2 p_size);
+	virtual void set_max_window_size(const Size2 p_size);
 	virtual void set_window_size(const Size2 p_size);
 	virtual void set_window_fullscreen(bool p_enabled);
 	virtual bool is_window_fullscreen() const;

@@ -46,7 +46,7 @@ void godot_icall_Array_Dtor(Array *ptr) {
 }
 
 MonoObject *godot_icall_Array_At(Array *ptr, int index) {
-	if (index < 0 || index > ptr->size()) {
+	if (index < 0 || index >= ptr->size()) {
 		GDMonoUtils::set_pending_exception(mono_get_exception_index_out_of_range());
 		return NULL;
 	}
@@ -54,7 +54,7 @@ MonoObject *godot_icall_Array_At(Array *ptr, int index) {
 }
 
 MonoObject *godot_icall_Array_At_Generic(Array *ptr, int index, uint32_t type_encoding, GDMonoClass *type_class) {
-	if (index < 0 || index > ptr->size()) {
+	if (index < 0 || index >= ptr->size()) {
 		GDMonoUtils::set_pending_exception(mono_get_exception_index_out_of_range());
 		return NULL;
 	}
@@ -62,7 +62,7 @@ MonoObject *godot_icall_Array_At_Generic(Array *ptr, int index, uint32_t type_en
 }
 
 void godot_icall_Array_SetAt(Array *ptr, int index, MonoObject *value) {
-	if (index < 0 || index > ptr->size()) {
+	if (index < 0 || index >= ptr->size()) {
 		GDMonoUtils::set_pending_exception(mono_get_exception_index_out_of_range());
 		return;
 	}
@@ -73,8 +73,9 @@ int godot_icall_Array_Count(Array *ptr) {
 	return ptr->size();
 }
 
-void godot_icall_Array_Add(Array *ptr, MonoObject *item) {
+int godot_icall_Array_Add(Array *ptr, MonoObject *item) {
 	ptr->append(GDMonoMarshal::mono_object_to_variant(item));
+	return ptr->size();
 }
 
 void godot_icall_Array_Clear(Array *ptr) {
@@ -123,7 +124,7 @@ MonoBoolean godot_icall_Array_Remove(Array *ptr, MonoObject *item) {
 }
 
 void godot_icall_Array_RemoveAt(Array *ptr, int index) {
-	if (index < 0 || index > ptr->size()) {
+	if (index < 0 || index >= ptr->size()) {
 		GDMonoUtils::set_pending_exception(mono_get_exception_index_out_of_range());
 		return;
 	}
@@ -142,6 +143,10 @@ void godot_icall_Array_Generic_GetElementTypeInfo(MonoReflectionType *refltype, 
 	*type_class = GDMono::get_singleton()->get_class(type_class_raw);
 }
 
+MonoString *godot_icall_Array_ToString(Array *ptr) {
+	return GDMonoMarshal::mono_string_from_godot(Variant(*ptr).operator String());
+}
+
 Dictionary *godot_icall_Dictionary_Ctor() {
 	return memnew(Dictionary);
 }
@@ -157,7 +162,7 @@ MonoObject *godot_icall_Dictionary_GetValue(Dictionary *ptr, MonoObject *key) {
 #ifdef DEBUG_ENABLED
 		CRASH_COND(!exc);
 #endif
-		GDMonoUtils::runtime_object_init(exc);
+		GDMonoUtils::runtime_object_init(exc, CACHED_CLASS(KeyNotFoundException));
 		GDMonoUtils::set_pending_exception((MonoException *)exc);
 		return NULL;
 	}
@@ -171,7 +176,7 @@ MonoObject *godot_icall_Dictionary_GetValue_Generic(Dictionary *ptr, MonoObject 
 #ifdef DEBUG_ENABLED
 		CRASH_COND(!exc);
 #endif
-		GDMonoUtils::runtime_object_init(exc);
+		GDMonoUtils::runtime_object_init(exc, CACHED_CLASS(KeyNotFoundException));
 		GDMonoUtils::set_pending_exception((MonoException *)exc);
 		return NULL;
 	}
@@ -263,6 +268,10 @@ void godot_icall_Dictionary_Generic_GetValueTypeInfo(MonoReflectionType *refltyp
 	*type_class = GDMono::get_singleton()->get_class(type_class_raw);
 }
 
+MonoString *godot_icall_Dictionary_ToString(Dictionary *ptr) {
+	return GDMonoMarshal::mono_string_from_godot(Variant(*ptr).operator String());
+}
+
 void godot_register_collections_icalls() {
 	mono_add_internal_call("Godot.Collections.Array::godot_icall_Array_Ctor", (void *)godot_icall_Array_Ctor);
 	mono_add_internal_call("Godot.Collections.Array::godot_icall_Array_Dtor", (void *)godot_icall_Array_Dtor);
@@ -280,6 +289,7 @@ void godot_register_collections_icalls() {
 	mono_add_internal_call("Godot.Collections.Array::godot_icall_Array_RemoveAt", (void *)godot_icall_Array_RemoveAt);
 	mono_add_internal_call("Godot.Collections.Array::godot_icall_Array_Resize", (void *)godot_icall_Array_Resize);
 	mono_add_internal_call("Godot.Collections.Array::godot_icall_Array_Generic_GetElementTypeInfo", (void *)godot_icall_Array_Generic_GetElementTypeInfo);
+	mono_add_internal_call("Godot.Collections.Array::godot_icall_Array_ToString", (void *)godot_icall_Array_ToString);
 
 	mono_add_internal_call("Godot.Collections.Dictionary::godot_icall_Dictionary_Ctor", (void *)godot_icall_Dictionary_Ctor);
 	mono_add_internal_call("Godot.Collections.Dictionary::godot_icall_Dictionary_Dtor", (void *)godot_icall_Dictionary_Dtor);
@@ -298,6 +308,7 @@ void godot_register_collections_icalls() {
 	mono_add_internal_call("Godot.Collections.Dictionary::godot_icall_Dictionary_TryGetValue", (void *)godot_icall_Dictionary_TryGetValue);
 	mono_add_internal_call("Godot.Collections.Dictionary::godot_icall_Dictionary_TryGetValue_Generic", (void *)godot_icall_Dictionary_TryGetValue_Generic);
 	mono_add_internal_call("Godot.Collections.Dictionary::godot_icall_Dictionary_Generic_GetValueTypeInfo", (void *)godot_icall_Dictionary_Generic_GetValueTypeInfo);
+	mono_add_internal_call("Godot.Collections.Dictionary::godot_icall_Dictionary_ToString", (void *)godot_icall_Dictionary_ToString);
 }
 
 #endif // MONO_GLUE_ENABLED

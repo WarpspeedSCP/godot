@@ -159,9 +159,7 @@ void GraphNode::_resort() {
 		fit_child_in_rect(c, r);
 		cache_y.push_back(vofs + size.y * 0.5);
 
-		if (vofs > 0)
-			vofs += sep;
-		vofs += size.y;
+		vofs += size.y + sep;
 	}
 
 	update();
@@ -601,6 +599,8 @@ void GraphNode::_gui_input(const Ref<InputEvent> &p_ev) {
 
 			Vector2 mpos = Vector2(mb->get_position().x, mb->get_position().y);
 			if (close_rect.size != Size2() && close_rect.has_point(mpos)) {
+				//send focus to parent
+				get_parent_control()->grab_focus();
 				emit_signal("close_request");
 				accept_event();
 				return;
@@ -617,9 +617,7 @@ void GraphNode::_gui_input(const Ref<InputEvent> &p_ev) {
 				return;
 			}
 
-			//send focus to parent
 			emit_signal("raise_request");
-			get_parent_control()->grab_focus();
 		}
 
 		if (!mb->is_pressed() && mb->get_button_index() == BUTTON_LEFT) {

@@ -29,6 +29,7 @@
 /*************************************************************************/
 
 #include "editor_properties.h"
+
 #include "editor/editor_resource_preview.h"
 #include "editor_node.h"
 #include "editor_properties_array_dict.h"
@@ -111,12 +112,13 @@ void EditorPropertyMultilineText::_open_big_text() {
 		big_text->set_wrap_enabled(true);
 		big_text_dialog = memnew(AcceptDialog);
 		big_text_dialog->add_child(big_text);
-		big_text_dialog->set_title("Edit Text:");
+		big_text_dialog->set_title(TTR("Edit Text:"));
 		add_child(big_text_dialog);
 	}
 
 	big_text_dialog->popup_centered_ratio();
 	big_text->set_text(text->get_text());
+	big_text->grab_focus();
 }
 
 void EditorPropertyMultilineText::update_property() {
@@ -207,7 +209,13 @@ EditorPropertyTextEnum::EditorPropertyTextEnum() {
 
 void EditorPropertyPath::_path_selected(const String &p_path) {
 
-	emit_changed(get_edited_property(), p_path);
+	String final_path = p_path;
+	if (final_path.is_abs_path()) {
+		String res_path = OS::get_singleton()->get_resource_dir() + "/";
+		final_path = res_path.path_to_file(final_path);
+	}
+
+	emit_changed(get_edited_property(), final_path);
 	update_property();
 }
 void EditorPropertyPath::_path_pressed() {
@@ -220,6 +228,13 @@ void EditorPropertyPath::_path_pressed() {
 	}
 
 	String full_path = get_edited_object()->get(get_edited_property());
+	if (full_path.is_rel_path()) {
+
+		if (!DirAccess::exists(full_path.get_base_dir())) {
+			DirAccessRef da(DirAccess::create(DirAccess::ACCESS_FILESYSTEM));
+			da->make_dir_recursive(full_path.get_base_dir());
+		}
+	}
 
 	dialog->clear_filters();
 
@@ -375,7 +390,7 @@ void EditorPropertyMember::_property_select() {
 				type = Variant::Type(i);
 			}
 		}
-		if (type)
+		if (type != Variant::NIL)
 			selector->select_method_from_basic_type(type, current);
 
 	} else if (hint == MEMBER_METHOD_OF_BASE_TYPE) {
@@ -599,7 +614,8 @@ EditorPropertyFlags::EditorPropertyFlags() {
 ///////////////////// LAYERS /////////////////////////
 
 class EditorPropertyLayersGrid : public Control {
-	GDCLASS(EditorPropertyLayersGrid, Control)
+	GDCLASS(EditorPropertyLayersGrid, Control);
+
 public:
 	uint32_t value;
 	Vector<Rect2> flag_rects;
@@ -786,6 +802,7 @@ EditorPropertyLayers::EditorPropertyLayers() {
 	grid->set_h_size_flags(SIZE_EXPAND_FILL);
 	hb->add_child(grid);
 	button = memnew(Button);
+	button->set_toggle_mode(true);
 	button->set_text("..");
 	button->connect("pressed", this, "_button_pressed");
 	hb->add_child(button);
@@ -794,6 +811,7 @@ EditorPropertyLayers::EditorPropertyLayers() {
 	add_child(layers);
 	layers->set_hide_on_checkable_item_selection(false);
 	layers->connect("id_pressed", this, "_menu_pressed");
+	layers->connect("popup_hide", button, "set_pressed", varray(false));
 }
 
 ///////////////////// INT /////////////////////////
@@ -922,6 +940,9 @@ void EditorPropertyEasing::_drag_easing(const Ref<InputEvent> &p_ev) {
 		preset->set_global_position(easing_draw->get_global_transform().xform(mb->get_position()));
 		preset->popup();
 	}
+	if (mb.is_valid() && mb->is_doubleclick() && mb->get_button_index() == BUTTON_LEFT) {
+		_setup_spin();
+	}
 
 	Ref<InputEventMouseMotion> mm = p_ev;
 
@@ -960,7 +981,6 @@ void EditorPropertyEasing::_draw_easing() {
 	Size2 s = easing_draw->get_size();
 	Rect2 r(Point2(), s);
 	r = r.grow(3);
-	//get_stylebox("normal", "LineEdit")->draw(ci, r);
 
 	int points = 48;
 
@@ -1003,6 +1023,31 @@ void EditorPropertyEasing::_set_preset(int p_preset) {
 	easing_draw->update();
 }
 
+void EditorPropertyEasing::_setup_spin() {
+	setting = true;
+	spin->setup_and_show();
+	spin->get_line_edit()->set_text(rtos(get_edited_object()->get(get_edited_property())));
+	setting = false;
+	spin->show();
+}
+
+void EditorPropertyEasing::_spin_value_changed(double p_value) {
+	if (setting)
+		return;
+
+	// 0 is a singularity, but both positive and negative values
+	// are otherwise allowed. Enforce 0+ as workaround.
+	if (Math::is_zero_approx(p_value)) {
+		p_value = 0.00001;
+	}
+	emit_changed(get_edited_property(), p_value);
+	_spin_focus_exited();
+}
+
+void EditorPropertyEasing::_spin_focus_exited() {
+	spin->hide();
+}
+
 void EditorPropertyEasing::setup(bool p_full, bool p_flip) {
 
 	flip = p_flip;
@@ -1025,9 +1070,6 @@ void EditorPropertyEasing::_notification(int p_what) {
 			}
 			easing_draw->set_custom_minimum_size(Size2(0, get_font("font", "Label")->get_height() * 2));
 		} break;
-		case NOTIFICATION_RESIZED: {
-
-		} break;
 	}
 }
 
@@ -1036,6 +1078,9 @@ void EditorPropertyEasing::_bind_methods() {
 	ClassDB::bind_method("_draw_easing", &EditorPropertyEasing::_draw_easing);
 	ClassDB::bind_method("_drag_easing", &EditorPropertyEasing::_drag_easing);
 	ClassDB::bind_method("_set_preset", &EditorPropertyEasing::_set_preset);
+
+	ClassDB::bind_method("_spin_value_changed", &EditorPropertyEasing::_spin_value_changed);
+	ClassDB::bind_method("_spin_focus_exited", &EditorPropertyEasing::_spin_focus_exited);
 }
 
 EditorPropertyEasing::EditorPropertyEasing() {
@@ -1049,6 +1094,19 @@ EditorPropertyEasing::EditorPropertyEasing() {
 	preset = memnew(PopupMenu);
 	add_child(preset);
 	preset->connect("id_pressed", this, "_set_preset");
+
+	spin = memnew(EditorSpinSlider);
+	spin->set_flat(true);
+	spin->set_min(-100);
+	spin->set_max(100);
+	spin->set_step(0);
+	spin->set_hide_slider(true);
+	spin->set_allow_lesser(true);
+	spin->set_allow_greater(true);
+	spin->connect("value_changed", this, "_spin_value_changed");
+	spin->get_line_edit()->connect("focus_exited", this, "_spin_focus_exited");
+	spin->hide();
+	add_child(spin);
 
 	flip = false;
 	full = false;
@@ -2289,8 +2347,18 @@ void EditorPropertyResource::_update_menu_items() {
 				E = E->next();
 			}
 
+			List<StringName> global_classes;
+			ScriptServer::get_global_class_list(&global_classes);
+			E = global_classes.front();
+			while (E) {
+				if (EditorNode::get_editor_data().script_class_is_parent(E->get(), base_type)) {
+					valid_inheritors.insert(E->get());
+				}
+				E = E->next();
+			}
+
 			for (Set<String>::Element *F = valid_inheritors.front(); F; F = F->next()) {
-				String t = F->get();
+				const String &t = F->get();
 
 				bool is_custom_resource = false;
 				Ref<Texture> icon;
@@ -2305,7 +2373,7 @@ void EditorPropertyResource::_update_menu_items() {
 					}
 				}
 
-				if (!is_custom_resource && !ClassDB::can_instance(t))
+				if (!is_custom_resource && !(ScriptServer::is_global_class(t) || ClassDB::can_instance(t)))
 					continue;
 
 				inheritors_array.push_back(t);
@@ -2345,7 +2413,6 @@ void EditorPropertyResource::_update_menu_items() {
 			menu->add_separator();
 			menu->add_item(TTR("Show in FileSystem"), OBJ_MENU_SHOW_IN_FILE_SYSTEM);
 		}
-	} else {
 	}
 
 	RES cb = EditorSettings::get_singleton()->get_resource_clipboard();
@@ -2456,8 +2523,8 @@ void EditorPropertyResource::_fold_other_editors(Object *p_self) {
 	if (!res.is_valid())
 		return;
 	bool use_editor = false;
-	for (int i = 0; i < EditorNode::get_singleton()->get_editor_data().get_editor_plugin_count(); i++) {
-		EditorPlugin *ep = EditorNode::get_singleton()->get_editor_data().get_editor_plugin(i);
+	for (int i = 0; i < EditorNode::get_editor_data().get_editor_plugin_count(); i++) {
+		EditorPlugin *ep = EditorNode::get_editor_data().get_editor_plugin(i);
 		if (ep->handles(res.ptr())) {
 			use_editor = true;
 		}
@@ -2503,7 +2570,7 @@ void EditorPropertyResource::update_property() {
 				sub_inspector->set_keying(is_keying());
 				sub_inspector->set_read_only(is_read_only());
 				sub_inspector->set_use_folding(is_using_folding());
-				sub_inspector->set_undo_redo(EditorNode::get_singleton()->get_undo_redo());
+				sub_inspector->set_undo_redo(EditorNode::get_undo_redo());
 
 				sub_inspector_vbox = memnew(VBoxContainer);
 				add_child(sub_inspector_vbox);
@@ -2513,8 +2580,8 @@ void EditorPropertyResource::update_property() {
 				assign->set_pressed(true);
 
 				bool use_editor = false;
-				for (int i = 0; i < EditorNode::get_singleton()->get_editor_data().get_editor_plugin_count(); i++) {
-					EditorPlugin *ep = EditorNode::get_singleton()->get_editor_data().get_editor_plugin(i);
+				for (int i = 0; i < EditorNode::get_editor_data().get_editor_plugin_count(); i++) {
+					EditorPlugin *ep = EditorNode::get_editor_data().get_editor_plugin(i);
 					if (ep->handles(res.ptr())) {
 						use_editor = true;
 					}
@@ -2542,6 +2609,7 @@ void EditorPropertyResource::update_property() {
 				sub_inspector->edit(res.ptr());
 			}
 
+			sub_inspector->refresh();
 		} else {
 			if (sub_inspector) {
 				set_bottom_editor(NULL);
@@ -2587,6 +2655,7 @@ void EditorPropertyResource::_resource_selected() {
 	RES res = get_edited_object()->get(get_edited_property());
 
 	if (res.is_null()) {
+		edit->set_pressed(true);
 		_update_menu();
 		return;
 	}
@@ -2793,6 +2862,7 @@ EditorPropertyResource::EditorPropertyResource() {
 	assign->set_drag_forwarding(this);
 	assign->connect("draw", this, "_button_draw");
 	hbc->add_child(assign);
+	add_focusable(assign);
 
 	preview = memnew(TextureRect);
 	preview->set_expand(true);
@@ -2807,10 +2877,13 @@ EditorPropertyResource::EditorPropertyResource() {
 	add_child(menu);
 	edit = memnew(Button);
 	edit->set_flat(true);
+	edit->set_toggle_mode(true);
 	menu->connect("id_pressed", this, "_menu_option");
+	menu->connect("popup_hide", edit, "set_pressed", varray(false));
 	edit->connect("pressed", this, "_update_menu");
 	hbc->add_child(edit);
 	edit->connect("gui_input", this, "_button_input");
+	add_focusable(edit);
 
 	file = NULL;
 	scene_tree = NULL;
@@ -2830,6 +2903,8 @@ void EditorInspectorDefaultPlugin::parse_begin(Object *p_object) {
 }
 
 bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, int p_usage) {
+
+	float default_float_step = EDITOR_GET("interface/inspector/default_float_step");
 
 	switch (p_type) {
 
@@ -2872,7 +2947,8 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 					case PROPERTY_HINT_LAYERS_3D_PHYSICS:
 						lt = EditorPropertyLayers::LAYER_PHYSICS_3D;
 						break;
-					default: {} //compiler could be smarter here and realize this can't happen
+					default: {
+					} //compiler could be smarter here and realize this can't happen
 				}
 				EditorPropertyLayers *editor = memnew(EditorPropertyLayers);
 				editor->setup(lt);
@@ -2936,7 +3012,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 
 			} else {
 				EditorPropertyFloat *editor = memnew(EditorPropertyFloat);
-				double min = -65535, max = 65535, step = 0.001;
+				double min = -65535, max = 65535, step = default_float_step;
 				bool hide_slider = true;
 				bool exp_range = false;
 				bool greater = true, lesser = true;
@@ -2981,13 +3057,17 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 				EditorPropertyClassName *editor = memnew(EditorPropertyClassName);
 				editor->setup("Object", p_hint_text);
 				add_property_editor(p_path, editor);
-			} else if (p_hint == PROPERTY_HINT_DIR || p_hint == PROPERTY_HINT_FILE || p_hint == PROPERTY_HINT_GLOBAL_DIR || p_hint == PROPERTY_HINT_GLOBAL_FILE) {
+			} else if (p_hint == PROPERTY_HINT_DIR || p_hint == PROPERTY_HINT_FILE || p_hint == PROPERTY_HINT_SAVE_FILE || p_hint == PROPERTY_HINT_GLOBAL_DIR || p_hint == PROPERTY_HINT_GLOBAL_FILE) {
 
 				Vector<String> extensions = p_hint_text.split(",");
 				bool global = p_hint == PROPERTY_HINT_GLOBAL_DIR || p_hint == PROPERTY_HINT_GLOBAL_FILE;
 				bool folder = p_hint == PROPERTY_HINT_DIR || p_hint == PROPERTY_HINT_GLOBAL_DIR;
+				bool save = p_hint == PROPERTY_HINT_SAVE_FILE;
 				EditorPropertyPath *editor = memnew(EditorPropertyPath);
 				editor->setup(extensions, folder, global);
+				if (save) {
+					editor->set_save_mode();
+				}
 				add_property_editor(p_path, editor);
 			} else if (p_hint == PROPERTY_HINT_METHOD_OF_VARIANT_TYPE ||
 					   p_hint == PROPERTY_HINT_METHOD_OF_BASE_TYPE ||
@@ -3009,7 +3089,8 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 					case PROPERTY_HINT_PROPERTY_OF_BASE_TYPE: type = EditorPropertyMember::MEMBER_PROPERTY_OF_BASE_TYPE; break;
 					case PROPERTY_HINT_PROPERTY_OF_INSTANCE: type = EditorPropertyMember::MEMBER_PROPERTY_OF_INSTANCE; break;
 					case PROPERTY_HINT_PROPERTY_OF_SCRIPT: type = EditorPropertyMember::MEMBER_PROPERTY_OF_SCRIPT; break;
-					default: {}
+					default: {
+					}
 				}
 				editor->setup(type, p_hint_text);
 				add_property_editor(p_path, editor);
@@ -3028,7 +3109,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 
 		case Variant::VECTOR2: {
 			EditorPropertyVector2 *editor = memnew(EditorPropertyVector2);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3046,7 +3127,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 		} break; // 5
 		case Variant::RECT2: {
 			EditorPropertyRect2 *editor = memnew(EditorPropertyRect2);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3063,7 +3144,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 		} break;
 		case Variant::VECTOR3: {
 			EditorPropertyVector3 *editor = memnew(EditorPropertyVector3);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3081,7 +3162,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 		} break;
 		case Variant::TRANSFORM2D: {
 			EditorPropertyTransform2D *editor = memnew(EditorPropertyTransform2D);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3099,7 +3180,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 		} break;
 		case Variant::PLANE: {
 			EditorPropertyPlane *editor = memnew(EditorPropertyPlane);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3116,7 +3197,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 		} break;
 		case Variant::QUAT: {
 			EditorPropertyQuat *editor = memnew(EditorPropertyQuat);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3133,7 +3214,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 		} break; // 10
 		case Variant::AABB: {
 			EditorPropertyAABB *editor = memnew(EditorPropertyAABB);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3150,7 +3231,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 		} break;
 		case Variant::BASIS: {
 			EditorPropertyBasis *editor = memnew(EditorPropertyBasis);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3167,7 +3248,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 		} break;
 		case Variant::TRANSFORM: {
 			EditorPropertyTransform *editor = memnew(EditorPropertyTransform);
-			double min = -65535, max = 65535, step = 0.001;
+			double min = -65535, max = 65535, step = default_float_step;
 			bool hide_slider = true;
 
 			if (p_hint == PROPERTY_HINT_RANGE && p_hint_text.get_slice_count(",") >= 2) {
@@ -3273,7 +3354,8 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 			editor->setup(Variant::POOL_COLOR_ARRAY);
 			add_property_editor(p_path, editor);
 		} break;
-		default: {}
+		default: {
+		}
 	}
 
 	return false; //can be overridden, although it will most likely be last anyway

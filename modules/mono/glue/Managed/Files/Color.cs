@@ -1,7 +1,10 @@
 using System;
+using System.Runtime.InteropServices;
 
 namespace Godot
 {
+    [Serializable]
+    [StructLayout(LayoutKind.Sequential)]
     public struct Color : IEquatable<Color>
     {
         public float r;
@@ -168,7 +171,7 @@ namespace Godot
             int max = Mathf.Max(color.r8, Mathf.Max(color.g8, color.b8));
             int min = Mathf.Min(color.r8, Mathf.Min(color.g8, color.b8));
 
-            float delta = max - min;
+            int delta = max - min;
 
             if (delta == 0)
             {
@@ -375,7 +378,7 @@ namespace Godot
             return c;
         }
 
-        public string ToHtml(bool include_alpha = true)
+        public string ToHtml(bool includeAlpha = true)
         {
             var txt = string.Empty;
 
@@ -383,7 +386,7 @@ namespace Godot
             txt += ToHex32(g);
             txt += ToHex32(b);
 
-            if (include_alpha)
+            if (includeAlpha)
                 txt = ToHex32(a) + txt;
 
             return txt;
@@ -465,13 +468,13 @@ namespace Godot
 
             for (int i = 0; i < 2; i++)
             {
-                char[] c = { (char)0, (char)0 };
+                char c;
                 int lv = v & 0xF;
 
                 if (lv < 10)
-                    c[0] = (char)('0' + lv);
+                    c = (char)('0' + lv);
                 else
-                    c[0] = (char)('a' + lv - 10);
+                    c = (char)('a' + lv - 10);
 
                 v >>= 4;
                 ret = c + ret;
@@ -490,12 +493,17 @@ namespace Godot
 
             bool alpha;
 
-            if (color.Length == 8)
-                alpha = true;
-            else if (color.Length == 6)
-                alpha = false;
-            else
-                return false;
+            switch (color.Length)
+            {
+                case 8:
+                    alpha = true;
+                    break;
+                case 6:
+                    alpha = false;
+                    break;
+                default:
+                    return false;
+            }
 
             if (alpha)
             {
@@ -591,11 +599,11 @@ namespace Godot
 
         public static bool operator <(Color left, Color right)
         {
-            if (left.r == right.r)
+            if (Mathf.IsEqualApprox(left.r, right.r))
             {
-                if (left.g == right.g)
+                if (Mathf.IsEqualApprox(left.g, right.g))
                 {
-                    if (left.b == right.b)
+                    if (Mathf.IsEqualApprox(left.b, right.b))
                         return left.a < right.a;
                     return left.b < right.b;
                 }
@@ -608,11 +616,11 @@ namespace Godot
 
         public static bool operator >(Color left, Color right)
         {
-            if (left.r == right.r)
+            if (Mathf.IsEqualApprox(left.r, right.r))
             {
-                if (left.g == right.g)
+                if (Mathf.IsEqualApprox(left.g, right.g))
                 {
-                    if (left.b == right.b)
+                    if (Mathf.IsEqualApprox(left.b, right.b))
                         return left.a > right.a;
                     return left.b > right.b;
                 }
@@ -635,7 +643,7 @@ namespace Godot
 
         public bool Equals(Color other)
         {
-            return r == other.r && g == other.g && b == other.b && a == other.a;
+            return Mathf.IsEqualApprox(r, other.r) && Mathf.IsEqualApprox(g, other.g) && Mathf.IsEqualApprox(b, other.b) && Mathf.IsEqualApprox(a, other.a);
         }
 
         public override int GetHashCode()

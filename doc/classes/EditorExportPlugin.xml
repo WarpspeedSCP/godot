@@ -6,8 +6,6 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<demos>
-	</demos>
 	<methods>
 		<method name="_export_begin" qualifiers="virtual">
 			<return type="void">
@@ -20,6 +18,12 @@
 			</argument>
 			<argument index="3" name="flags" type="int">
 			</argument>
+			<description>
+			</description>
+		</method>
+		<method name="_export_end" qualifiers="virtual">
+			<return type="void">
+			</return>
 			<description>
 			</description>
 		</method>

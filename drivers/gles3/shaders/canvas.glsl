@@ -117,7 +117,12 @@ void main() {
 #ifdef USE_INSTANCING
 	mat4 extra_matrix_instance = extra_matrix * transpose(mat4(instance_xform0, instance_xform1, instance_xform2, vec4(0.0, 0.0, 0.0, 1.0)));
 	color *= instance_color;
+
+#ifdef USE_INSTANCE_CUSTOM
 	vec4 instance_custom = instance_custom_data;
+#else
+	vec4 instance_custom = vec4(0.0);
+#endif
 
 #else
 	mat4 extra_matrix_instance = extra_matrix;
@@ -592,7 +597,7 @@ FRAGMENT_SHADER_CODE
 
 #ifdef USE_RGBA_SHADOWS
 
-#define SHADOW_DEPTH(m_tex, m_uv) dot(texture((m_tex), (m_uv)), vec4(1.0 / (256.0 * 256.0 * 256.0), 1.0 / (256.0 * 256.0), 1.0 / 256.0, 1.0))
+#define SHADOW_DEPTH(m_tex, m_uv) dot(texture((m_tex), (m_uv)), vec4(1.0 / (255.0 * 255.0 * 255.0), 1.0 / (255.0 * 255.0), 1.0 / 255.0, 1.0))
 
 #else
 

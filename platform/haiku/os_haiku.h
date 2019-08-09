@@ -38,6 +38,7 @@
 #include "haiku_direct_window.h"
 #include "main/input_default.h"
 #include "servers/audio_server.h"
+#include "servers/camera_server.h"
 #include "servers/visual_server.h"
 
 class OS_Haiku : public OS_Unix {
@@ -49,6 +50,7 @@ private:
 	VisualServer *visual_server;
 	VideoMode current_video_mode;
 	int video_driver_index;
+	CameraServer *camera_server;
 
 #ifdef MEDIA_KIT_ENABLED
 	AudioDriverMediaKit driver_media_kit;
@@ -74,7 +76,7 @@ public:
 	OS_Haiku();
 	void run();
 
-	virtual String get_name();
+	virtual String get_name() const;
 
 	virtual MainLoop *get_main_loop() const;
 
@@ -86,6 +88,7 @@ public:
 	virtual Point2 get_mouse_position() const;
 	virtual int get_mouse_button_state() const;
 	virtual void set_cursor_shape(CursorShape p_shape);
+	virtual CursorShape get_cursor_shape() const;
 	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 
 	virtual int get_screen_count() const;

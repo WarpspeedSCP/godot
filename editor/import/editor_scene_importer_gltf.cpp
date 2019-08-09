@@ -30,6 +30,7 @@
 
 #include "editor_scene_importer_gltf.h"
 #include "core/io/json.h"
+#include "core/math/crypto_core.h"
 #include "core/math/math_defs.h"
 #include "core/os/file_access.h"
 #include "core/os/os.h"
@@ -37,7 +38,6 @@
 #include "scene/3d/mesh_instance.h"
 #include "scene/animation/animation_player.h"
 #include "scene/resources/surface_tool.h"
-#include "thirdparty/misc/base64.h"
 
 uint32_t EditorSceneImporterGLTF::get_import_flags() const {
 
@@ -279,7 +279,8 @@ static Vector<uint8_t> _parse_base64_uri(const String &uri) {
 	Vector<uint8_t> buf;
 	buf.resize(strlen / 4 * 3 + 1 + 1);
 
-	int len = base64_decode((char *)buf.ptr(), (char *)substr.get_data(), strlen);
+	size_t len = 0;
+	ERR_FAIL_COND_V(CryptoCore::b64_decode(buf.ptrw(), buf.size(), &len, (unsigned char *)substr.get_data(), strlen) != OK, Vector<uint8_t>());
 
 	buf.resize(len);
 
@@ -581,7 +582,9 @@ int EditorSceneImporterGLTF::_get_component_type_size(int component_type) {
 		case COMPONENT_TYPE_UNSIGNED_SHORT: return 2; break;
 		case COMPONENT_TYPE_INT: return 4; break;
 		case COMPONENT_TYPE_FLOAT: return 4; break;
-		default: { ERR_FAIL_V(0); }
+		default: {
+			ERR_FAIL_V(0);
+		}
 	}
 	return 0;
 }
@@ -631,7 +634,8 @@ Vector<double> EditorSceneImporterGLTF::_decode_accessor(GLTFState &state, int p
 				element_size = 16; //override for this case
 			}
 		} break;
-		default: {}
+		default: {
+		}
 	}
 
 	Vector<double> dst_buffer;
@@ -982,7 +986,7 @@ Error EditorSceneImporterGLTF::_parse_meshes(GLTFState &state) {
 				Ref<SurfaceTool> st;
 				st.instance();
 				st->create_from_triangle_arrays(array);
-				if (p.has("targets")) {
+				if (!p.has("targets")) {
 					//morph targets should not be reindexed, as array size might differ
 					//removing indices is the best bet here
 					st->deindex();
@@ -1697,6 +1701,22 @@ void EditorSceneImporterGLTF::_assign_scene_names(GLTFState &state) {
 	}
 }
 
+void EditorSceneImporterGLTF::_reparent_skeleton(GLTFState &state, int p_node, Vector<Skeleton *> &skeletons, Node *p_parent_node) {
+	//reparent skeletons to proper place
+	Vector<int> nodes = state.skeleton_nodes[p_node];
+	for (int i = 0; i < nodes.size(); i++) {
+		Skeleton *skeleton = skeletons[nodes[i]];
+		Node *owner = skeleton->get_owner();
+		skeleton->get_parent()->remove_child(skeleton);
+		p_parent_node->add_child(skeleton);
+		skeleton->set_owner(owner);
+		//may have meshes as children, set owner in them too
+		for (int j = 0; j < skeleton->get_child_count(); j++) {
+			skeleton->get_child(j)->set_owner(owner);
+		}
+	}
+}
+
 void EditorSceneImporterGLTF::_generate_node(GLTFState &state, int p_node, Node *p_parent, Node *p_owner, Vector<Skeleton *> &skeletons) {
 	ERR_FAIL_INDEX(p_node, state.nodes.size());
 
@@ -1768,24 +1788,17 @@ void EditorSceneImporterGLTF::_generate_node(GLTFState &state, int p_node, Node 
 			_generate_node(state, n->children[i], node, p_owner, skeletons);
 		}
 	}
+
+	if (state.skeleton_nodes.has(p_node)) {
+		_reparent_skeleton(state, p_node, skeletons, node);
+	}
 }
 
 void EditorSceneImporterGLTF::_generate_bone(GLTFState &state, int p_node, Vector<Skeleton *> &skeletons, Node *p_parent_node) {
 	ERR_FAIL_INDEX(p_node, state.nodes.size());
 
 	if (state.skeleton_nodes.has(p_node)) {
-		//reparent skeletons to proper place
-		Vector<int> nodes = state.skeleton_nodes[p_node];
-		for (int i = 0; i < nodes.size(); i++) {
-			Node *owner = skeletons[i]->get_owner();
-			skeletons[i]->get_parent()->remove_child(skeletons[i]);
-			p_parent_node->add_child(skeletons[i]);
-			skeletons[i]->set_owner(owner);
-			//may have meshes as children, set owner in them too
-			for (int j = 0; j < skeletons[i]->get_child_count(); j++) {
-				skeletons[i]->get_child(j)->set_owner(owner);
-			}
-		}
+		_reparent_skeleton(state, p_node, skeletons, p_parent_node);
 	}
 
 	GLTFNode *n = state.nodes[p_node];
@@ -2078,22 +2091,23 @@ void EditorSceneImporterGLTF::_import_animation(GLTFState &state, AnimationPlaye
 				animation->add_track(Animation::TYPE_VALUE);
 				animation->track_set_path(track_idx, node_path);
 
-				if (track.weight_tracks[i].interpolation <= GLTFAnimation::INTERP_STEP) {
-					animation->track_set_interpolation_type(track_idx, track.weight_tracks[i].interpolation == GLTFAnimation::INTERP_STEP ? Animation::INTERPOLATION_NEAREST : Animation::INTERPOLATION_NEAREST);
+				// Only LINEAR and STEP (NEAREST) can be supported out of the box by Godot's Animation,
+				// the other modes have to be baked.
+				GLTFAnimation::Interpolation gltf_interp = track.weight_tracks[i].interpolation;
+				if (gltf_interp == GLTFAnimation::INTERP_LINEAR || gltf_interp == GLTFAnimation::INTERP_STEP) {
+					animation->track_set_interpolation_type(track_idx, gltf_interp == GLTFAnimation::INTERP_STEP ? Animation::INTERPOLATION_NEAREST : Animation::INTERPOLATION_LINEAR);
 					for (int j = 0; j < track.weight_tracks[i].times.size(); j++) {
 						float t = track.weight_tracks[i].times[j];
 						float w = track.weight_tracks[i].values[j];
 						animation->track_insert_key(track_idx, t, w);
 					}
 				} else {
-					//must bake, apologies.
+					// CATMULLROMSPLINE or CUBIC_SPLINE have to be baked, apologies.
 					float increment = 1.0 / float(bake_fps);
 					float time = 0.0;
-
 					bool last = false;
 					while (true) {
-
-						_interpolate_track<float>(track.weight_tracks[i].times, track.weight_tracks[i].values, time, track.weight_tracks[i].interpolation);
+						_interpolate_track<float>(track.weight_tracks[i].times, track.weight_tracks[i].values, time, gltf_interp);
 						if (last) {
 							break;
 						}

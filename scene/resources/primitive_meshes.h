@@ -72,6 +72,7 @@ public:
 	virtual Array surface_get_blend_shape_arrays(int p_surface) const;
 	virtual uint32_t surface_get_format(int p_idx) const;
 	virtual Mesh::PrimitiveType surface_get_primitive_type(int p_idx) const;
+	virtual void surface_set_material(int p_idx, const Ref<Material> &p_material);
 	virtual Ref<Material> surface_get_material(int p_idx) const;
 	virtual int get_blend_shape_count() const;
 	virtual StringName get_blend_shape_name(int p_index) const;
@@ -268,7 +269,7 @@ public:
 
 class QuadMesh : public PrimitiveMesh {
 
-	GDCLASS(QuadMesh, PrimitiveMesh)
+	GDCLASS(QuadMesh, PrimitiveMesh);
 
 private:
 	Size2 size;
@@ -319,6 +320,21 @@ public:
 	bool get_is_hemisphere() const;
 
 	SphereMesh();
+};
+
+/**
+	A single point for use in particle systems
+*/
+
+class PointMesh : public PrimitiveMesh {
+
+	GDCLASS(PointMesh, PrimitiveMesh)
+
+protected:
+	virtual void _create_mesh_array(Array &p_arr) const;
+
+public:
+	PointMesh();
 };
 
 #endif

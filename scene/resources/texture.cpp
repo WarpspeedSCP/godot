@@ -34,7 +34,9 @@
 #include "core/io/image_loader.h"
 #include "core/method_bind_ext.gen.inc"
 #include "core/os/os.h"
+#include "mesh.h"
 #include "scene/resources/bit_map.h"
+#include "servers/camera/camera_feed.h"
 
 Size2 Texture::get_size() const {
 
@@ -110,10 +112,12 @@ void ImageTexture::reload_from_file() {
 	Ref<Image> img;
 	img.instance();
 
-	Error err = ImageLoader::load_image(path, img);
-	ERR_FAIL_COND(err != OK);
-
-	create_from_image(img, flags);
+	if (ImageLoader::load_image(path, img) == OK) {
+		create_from_image(img, flags);
+	} else {
+		Resource::reload_from_file();
+		_change_notify();
+	}
 }
 
 bool ImageTexture::_set(const StringName &p_name, const Variant &p_value) {
@@ -229,7 +233,7 @@ Image::Format ImageTexture::get_format() const {
 #ifndef DISABLE_DEPRECATED
 Error ImageTexture::load(const String &p_path) {
 
-	WARN_DEPRECATED
+	WARN_DEPRECATED;
 	Ref<Image> img;
 	img.instance();
 	Error err = img->load(p_path);
@@ -637,7 +641,7 @@ Error StreamTexture::_load_data(const String &p_path, int &tw, int &th, int &tw_
 		bool mipmaps = df & FORMAT_BIT_HAS_MIPMAPS;
 
 		if (!mipmaps) {
-			int size = Image::get_image_data_size(tw, th, format, 0);
+			int size = Image::get_image_data_size(tw, th, format, false);
 
 			PoolVector<uint8_t> img_data;
 			img_data.resize(size);
@@ -659,7 +663,6 @@ Error StreamTexture::_load_data(const String &p_path, int &tw, int &th, int &tw_
 			int mipmaps2 = Image::get_image_required_mipmaps(tw, th, format);
 			int total_size = Image::get_image_data_size(tw, th, format, true);
 			int idx = 0;
-			int ofs = 0;
 
 			while (mipmaps2 > 1 && p_size_limit > 0 && (sw > p_size_limit || sh > p_size_limit)) {
 
@@ -669,9 +672,7 @@ Error StreamTexture::_load_data(const String &p_path, int &tw, int &th, int &tw_
 				idx++;
 			}
 
-			if (idx > 0) {
-				ofs = Image::get_image_data_size(tw, th, format, idx - 1);
-			}
+			int ofs = Image::get_image_mipmap_offset(tw, th, format, idx);
 
 			if (total_size - ofs <= 0) {
 				memdelete(f);
@@ -1133,6 +1134,138 @@ AtlasTexture::AtlasTexture() {
 	filter_clip = false;
 }
 
+/////////////////////////////////////////
+
+int MeshTexture::get_width() const {
+	return size.width;
+}
+int MeshTexture::get_height() const {
+	return size.height;
+}
+RID MeshTexture::get_rid() const {
+	return RID();
+}
+
+bool MeshTexture::has_alpha() const {
+	return false;
+}
+
+void MeshTexture::set_flags(uint32_t p_flags) {
+}
+
+uint32_t MeshTexture::get_flags() const {
+	return 0;
+}
+
+void MeshTexture::set_mesh(const Ref<Mesh> &p_mesh) {
+	mesh = p_mesh;
+}
+Ref<Mesh> MeshTexture::get_mesh() const {
+	return mesh;
+}
+
+void MeshTexture::set_image_size(const Size2 &p_size) {
+	size = p_size;
+}
+
+Size2 MeshTexture::get_image_size() const {
+
+	return size;
+}
+
+void MeshTexture::set_base_texture(const Ref<Texture> &p_texture) {
+	base_texture = p_texture;
+}
+
+Ref<Texture> MeshTexture::get_base_texture() const {
+	return base_texture;
+}
+
+void MeshTexture::draw(RID p_canvas_item, const Point2 &p_pos, const Color &p_modulate, bool p_transpose, const Ref<Texture> &p_normal_map) const {
+
+	if (mesh.is_null() || base_texture.is_null()) {
+		return;
+	}
+	Transform2D xform;
+	xform.set_origin(p_pos);
+	if (p_transpose) {
+		SWAP(xform.elements[0][1], xform.elements[1][0]);
+		SWAP(xform.elements[0][0], xform.elements[1][1]);
+	}
+	RID normal_rid = p_normal_map.is_valid() ? p_normal_map->get_rid() : RID();
+	VisualServer::get_singleton()->canvas_item_add_mesh(p_canvas_item, mesh->get_rid(), xform, p_modulate, base_texture->get_rid(), normal_rid);
+}
+void MeshTexture::draw_rect(RID p_canvas_item, const Rect2 &p_rect, bool p_tile, const Color &p_modulate, bool p_transpose, const Ref<Texture> &p_normal_map) const {
+	if (mesh.is_null() || base_texture.is_null()) {
+		return;
+	}
+	Transform2D xform;
+	Vector2 origin = p_rect.position;
+	if (p_rect.size.x < 0) {
+		origin.x += size.x;
+	}
+	if (p_rect.size.y < 0) {
+		origin.y += size.y;
+	}
+	xform.set_origin(origin);
+	xform.set_scale(p_rect.size / size);
+
+	if (p_transpose) {
+		SWAP(xform.elements[0][1], xform.elements[1][0]);
+		SWAP(xform.elements[0][0], xform.elements[1][1]);
+	}
+	RID normal_rid = p_normal_map.is_valid() ? p_normal_map->get_rid() : RID();
+	VisualServer::get_singleton()->canvas_item_add_mesh(p_canvas_item, mesh->get_rid(), xform, p_modulate, base_texture->get_rid(), normal_rid);
+}
+void MeshTexture::draw_rect_region(RID p_canvas_item, const Rect2 &p_rect, const Rect2 &p_src_rect, const Color &p_modulate, bool p_transpose, const Ref<Texture> &p_normal_map, bool p_clip_uv) const {
+
+	if (mesh.is_null() || base_texture.is_null()) {
+		return;
+	}
+	Transform2D xform;
+	Vector2 origin = p_rect.position;
+	if (p_rect.size.x < 0) {
+		origin.x += size.x;
+	}
+	if (p_rect.size.y < 0) {
+		origin.y += size.y;
+	}
+	xform.set_origin(origin);
+	xform.set_scale(p_rect.size / size);
+
+	if (p_transpose) {
+		SWAP(xform.elements[0][1], xform.elements[1][0]);
+		SWAP(xform.elements[0][0], xform.elements[1][1]);
+	}
+	RID normal_rid = p_normal_map.is_valid() ? p_normal_map->get_rid() : RID();
+	VisualServer::get_singleton()->canvas_item_add_mesh(p_canvas_item, mesh->get_rid(), xform, p_modulate, base_texture->get_rid(), normal_rid);
+}
+bool MeshTexture::get_rect_region(const Rect2 &p_rect, const Rect2 &p_src_rect, Rect2 &r_rect, Rect2 &r_src_rect) const {
+	r_rect = p_rect;
+	r_src_rect = p_src_rect;
+	return true;
+}
+
+bool MeshTexture::is_pixel_opaque(int p_x, int p_y) const {
+	return true;
+}
+
+void MeshTexture::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_mesh", "mesh"), &MeshTexture::set_mesh);
+	ClassDB::bind_method(D_METHOD("get_mesh"), &MeshTexture::get_mesh);
+	ClassDB::bind_method(D_METHOD("set_image_size", "size"), &MeshTexture::set_image_size);
+	ClassDB::bind_method(D_METHOD("get_image_size"), &MeshTexture::get_image_size);
+	ClassDB::bind_method(D_METHOD("set_base_texture", "texture"), &MeshTexture::set_base_texture);
+	ClassDB::bind_method(D_METHOD("get_base_texture"), &MeshTexture::get_base_texture);
+
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "mesh", PROPERTY_HINT_RESOURCE_TYPE, "Mesh"), "set_mesh", "get_mesh");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "base_texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture"), "set_base_texture", "get_base_texture");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "image_size", PROPERTY_HINT_RANGE, "0,16384,1"), "set_image_size", "get_image_size");
+}
+
+MeshTexture::MeshTexture() {
+}
+
 //////////////////////////////////////////
 
 int LargeTexture::get_width() const {
@@ -1354,8 +1487,10 @@ uint32_t CubeMap::get_flags() const {
 
 void CubeMap::set_side(Side p_side, const Ref<Image> &p_image) {
 
+	ERR_FAIL_COND(p_image.is_null());
 	ERR_FAIL_COND(p_image->empty());
 	ERR_FAIL_INDEX(p_side, 6);
+
 	if (!_is_valid()) {
 		format = p_image->get_format();
 		w = p_image->get_width();
@@ -1369,6 +1504,7 @@ void CubeMap::set_side(Side p_side, const Ref<Image> &p_image) {
 
 Ref<Image> CubeMap::get_side(Side p_side) const {
 
+	ERR_FAIL_INDEX_V(p_side, 6, Ref<Image>());
 	if (!valid[p_side])
 		return Ref<Image>();
 	return VS::get_singleton()->texture_get_data(cubemap, VS::CubeMapSide(p_side));
@@ -2365,4 +2501,108 @@ String ResourceFormatLoaderTextureLayered::get_resource_type(const String &p_pat
 	if (p_path.get_extension().to_lower() == "texarr")
 		return "TextureArray";
 	return "";
+}
+
+void CameraTexture::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_camera_feed_id", "feed_id"), &CameraTexture::set_camera_feed_id);
+	ClassDB::bind_method(D_METHOD("get_camera_feed_id"), &CameraTexture::get_camera_feed_id);
+
+	ClassDB::bind_method(D_METHOD("set_which_feed", "which_feed"), &CameraTexture::set_which_feed);
+	ClassDB::bind_method(D_METHOD("get_which_feed"), &CameraTexture::get_which_feed);
+
+	ClassDB::bind_method(D_METHOD("set_camera_active", "active"), &CameraTexture::set_camera_active);
+	ClassDB::bind_method(D_METHOD("get_camera_active"), &CameraTexture::get_camera_active);
+
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "camera_feed_id"), "set_camera_feed_id", "get_camera_feed_id");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "which_feed"), "set_which_feed", "get_which_feed");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "camera_is_active"), "set_camera_active", "get_camera_active");
+}
+
+int CameraTexture::get_width() const {
+	Ref<CameraFeed> feed = CameraServer::get_singleton()->get_feed_by_id(camera_feed_id);
+	if (feed.is_valid()) {
+		return feed->get_base_width();
+	} else {
+		return 0;
+	}
+}
+
+int CameraTexture::get_height() const {
+	Ref<CameraFeed> feed = CameraServer::get_singleton()->get_feed_by_id(camera_feed_id);
+	if (feed.is_valid()) {
+		return feed->get_base_height();
+	} else {
+		return 0;
+	}
+}
+
+bool CameraTexture::has_alpha() const {
+	return false;
+}
+
+RID CameraTexture::get_rid() const {
+	Ref<CameraFeed> feed = CameraServer::get_singleton()->get_feed_by_id(camera_feed_id);
+	if (feed.is_valid()) {
+		return feed->get_texture(which_feed);
+	} else {
+		return RID();
+	}
+}
+
+void CameraTexture::set_flags(uint32_t p_flags) {
+	// not supported
+}
+
+uint32_t CameraTexture::get_flags() const {
+	// not supported
+	return 0;
+}
+
+Ref<Image> CameraTexture::get_data() const {
+	// not (yet) supported
+	return Ref<Image>();
+}
+
+void CameraTexture::set_camera_feed_id(int p_new_id) {
+	camera_feed_id = p_new_id;
+	_change_notify();
+}
+
+int CameraTexture::get_camera_feed_id() const {
+	return camera_feed_id;
+}
+
+void CameraTexture::set_which_feed(CameraServer::FeedImage p_which) {
+	which_feed = p_which;
+	_change_notify();
+}
+
+CameraServer::FeedImage CameraTexture::get_which_feed() const {
+	return which_feed;
+}
+
+void CameraTexture::set_camera_active(bool p_active) {
+	Ref<CameraFeed> feed = CameraServer::get_singleton()->get_feed_by_id(camera_feed_id);
+	if (feed.is_valid()) {
+		feed->set_active(p_active);
+		_change_notify();
+	}
+}
+
+bool CameraTexture::get_camera_active() const {
+	Ref<CameraFeed> feed = CameraServer::get_singleton()->get_feed_by_id(camera_feed_id);
+	if (feed.is_valid()) {
+		return feed->is_active();
+	} else {
+		return false;
+	}
+}
+
+CameraTexture::CameraTexture() {
+	camera_feed_id = 0;
+	which_feed = CameraServer::FEED_RGBA_IMAGE;
+}
+
+CameraTexture::~CameraTexture() {
+	// nothing to do here yet
 }

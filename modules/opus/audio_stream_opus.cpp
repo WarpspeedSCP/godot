@@ -280,7 +280,7 @@ int AudioStreamPlaybackOpus::mix(int16_t *p_buffer, int p_frames) {
 
 		int todo = p_frames;
 
-		if (todo == 0 || todo < MIN_MIX) {
+		if (todo < MIN_MIX) {
 			break;
 		}
 
@@ -313,7 +313,7 @@ int AudioStreamPlaybackOpus::mix(int16_t *p_buffer, int p_frames) {
 				bool ok = op_pcm_seek(opus_file, (loop_restart_time * osrate) + pre_skip) == 0;
 				if (!ok) {
 					playing = false;
-					ERR_PRINT("loop restart time rejected")
+					ERR_PRINT("Loop restart time rejected");
 				}
 
 				frames_mixed = (loop_restart_time * osrate) + pre_skip;

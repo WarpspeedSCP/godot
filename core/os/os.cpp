@@ -51,6 +51,35 @@ uint32_t OS::get_ticks_msec() const {
 	return get_ticks_usec() / 1000;
 }
 
+String OS::get_iso_date_time(bool local) const {
+	OS::Date date = get_date(local);
+	OS::Time time = get_time(local);
+
+	String timezone;
+	if (!local) {
+		TimeZoneInfo zone = get_time_zone_info();
+		if (zone.bias >= 0) {
+			timezone = "+";
+		}
+		timezone = timezone + itos(zone.bias / 60).pad_zeros(2) + itos(zone.bias % 60).pad_zeros(2);
+	} else {
+		timezone = "Z";
+	}
+
+	return itos(date.year).pad_zeros(2) +
+		   "-" +
+		   itos(date.month).pad_zeros(2) +
+		   "-" +
+		   itos(date.day).pad_zeros(2) +
+		   "T" +
+		   itos(time.hour).pad_zeros(2) +
+		   ":" +
+		   itos(time.min).pad_zeros(2) +
+		   ":" +
+		   itos(time.sec).pad_zeros(2) +
+		   timezone;
+}
+
 uint64_t OS::get_splash_tick_msec() const {
 	return _msec_splash;
 }
@@ -220,6 +249,16 @@ int OS::get_virtual_keyboard_height() const {
 	return 0;
 }
 
+void OS::set_cursor_shape(CursorShape p_shape) {
+}
+
+OS::CursorShape OS::get_cursor_shape() const {
+	return CURSOR_ARROW;
+}
+
+void OS::set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot) {
+}
+
 void OS::print_all_resources(String p_to_file) {
 
 	ERR_FAIL_COND(p_to_file != "" && _OSPRF);
@@ -229,7 +268,8 @@ void OS::print_all_resources(String p_to_file) {
 		_OSPRF = FileAccess::open(p_to_file, FileAccess::WRITE, &err);
 		if (err != OK) {
 			_OSPRF = NULL;
-			ERR_FAIL_COND(err != OK);
+			ERR_EXPLAIN("Can't print all resources to file: " + String(p_to_file));
+			ERR_FAIL();
 		}
 	}
 
@@ -453,6 +493,9 @@ void OS::_ensure_user_data_dir() {
 	ERR_FAIL_COND(err != OK);
 
 	memdelete(da);
+}
+
+void OS::set_native_icon(const String &p_filename) {
 }
 
 void OS::set_icon(const Ref<Image> &p_icon) {
@@ -746,6 +789,8 @@ OS::OS() {
 }
 
 OS::~OS() {
+	if (last_error)
+		memfree(last_error);
 	memdelete(_logger);
 	singleton = NULL;
 }
