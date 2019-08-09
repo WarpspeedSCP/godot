@@ -721,7 +721,7 @@ size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 	 * do an inexpensive page replacement operation instead
 	 * of waiting for a load to occur.
 	 *
-	 * Maybe this behaviour could be toggled; it may c
+	 * Maybe this behaviour could be toggled.
 	 */
 	{
 		// Lock to prevent any other threads from changing the queue.
