@@ -1,14 +1,12 @@
 #ifndef CTRL_QUEUE_H
 #define CTRL_QUEUE_H
 
-
-#include "core/rid.h"
 #include "core/list.h"
 #include "core/os/mutex.h"
 #include "core/os/semaphore.h"
+#include "core/rid.h"
 
 #include "data_helpers.h"
-
 
 class CachedResourceHandle : public RID_Data {};
 
@@ -26,10 +24,17 @@ struct CtrlOp {
 	size_t offset;
 	uint8_t type;
 
+	CtrlOp() :
+			di(NULL),
+			frame(CS_MEM_VAL_BAD),
+			offset(CS_MEM_VAL_BAD),
+			type(QUIT) {}
 
-	CtrlOp() : di(NULL), frame(CS_MEM_VAL_BAD), offset(CS_MEM_VAL_BAD), type(QUIT) {}
-
-	CtrlOp(DescriptorInfo *i_di, frame_id frame, size_t i_offset, uint8_t i_type) : di(i_di), frame(frame), offset(i_offset), type(i_type) {}
+	CtrlOp(DescriptorInfo *i_di, frame_id frame, size_t i_offset, uint8_t i_type) :
+			di(i_di),
+			frame(frame),
+			offset(i_offset),
+			type(i_type) {}
 };
 
 class CtrlQueue {
@@ -42,23 +47,26 @@ private:
 	Semaphore *sem;
 
 	CtrlOp pop() {
-		while(queue.empty()) {
-			sem->wait();
+
+		while (true) {
+
+			while (queue.empty()) {
+				sem->wait();
+			}
+
+			if (sig_quit) return CtrlOp();
+
+			// We only need to lock when accessing the queue.
+			MutexLock ml(mut);
+			if (!queue.empty()) {
+				CtrlOp op = queue.front()->get();
+				queue.pop_front();
+				return op;
+			}
 		}
-
-		if(sig_quit) return CtrlOp();
-
-		// We only need to lock when accessing the queue.
-		MutexLock ml(mut);
-
-		CtrlOp op = queue.front()->get();
-		queue.pop_front();
-
-		return op;
 	}
 
 public:
-
 	bool sig_quit;
 
 	CtrlQueue() {
@@ -74,8 +82,8 @@ public:
 
 	void push(CtrlOp op) {
 		MutexLock ml = MutexLock(mut);
-			queue.push_back(op);
-			sem->post();
+		queue.push_back(op);
+		sem->post();
 		WARN_PRINTS("Pushed op")
 	}
 
@@ -84,11 +92,10 @@ public:
 	 */
 	void priority_push(CtrlOp op) {
 		MutexLock ml = MutexLock(mut);
-			queue.push_front(op);
-			sem->post();
+		queue.push_front(op);
+		sem->post();
 		WARN_PRINTS("Priority pushed op.")
 	}
-
 };
 
 #endif //CTRL_QUEUE_H
