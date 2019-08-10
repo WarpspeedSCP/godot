@@ -158,13 +158,13 @@ private:
 protected:
 public:
 	typedef void (FileCacheManager::*insertion_policy_fn)(page_id);
-	typedef void (FileCacheManager::*replacement_policy_fn)(DescriptorInfo *, page_id *, frame_id *);
+	typedef page_id (FileCacheManager::*replacement_policy_fn)(DescriptorInfo *, page_id *, frame_id *);
 	typedef void (FileCacheManager::*update_policy_fn)(page_id);
 	typedef void (FileCacheManager::*removal_policy_fn)(page_id);
 
-	void rp_lru(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
-	void rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
-	void rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
+	page_id rp_lru(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
+	page_id rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
+	page_id rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
 
 	void rmp_lru(page_id curr_page);
 	void rmp_fifo(page_id curr_page);

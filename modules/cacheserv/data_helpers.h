@@ -94,6 +94,7 @@ struct Frame {
 
 private:
 	uint8_t *const memory_region;
+	page_id owning_page;
 	uint32_t ts_last_use;
 	uint16_t used_size;
 	volatile bool dirty;
@@ -103,6 +104,7 @@ private:
 public:
 	Frame() :
 			memory_region(NULL),
+			owning_page(0),
 			ts_last_use(0),
 			used_size(0),
 			dirty(false),
@@ -113,6 +115,7 @@ public:
 			uint8_t *i_memory_region) :
 
 			memory_region(i_memory_region),
+			owning_page(0),
 			ts_last_use(0),
 			used_size(0),
 			dirty(false),
@@ -122,12 +125,23 @@ public:
 	~Frame() {
 	}
 
+	_FORCE_INLINE_ page_id get_owning_page() {
+		return owning_page;
+	}
+
+	_FORCE_INLINE_ Frame &set_owning_page(page_id page) {
+		// A frame whose owning page is changing should not be dirty and should be in a non-ready state.
+		CRASH_COND(dirty || ready)
+		owning_page = page;
+		return *this;
+	}
+
 	_FORCE_INLINE_ bool get_dirty() {
 		return dirty;
 	}
 
 	_FORCE_INLINE_ Frame &set_dirty_true() {
-		// A dirty page that isn't ready cannot exist.
+		// A page that isn't ready can't become dirty.
 		CRASH_COND(!ready)
 		dirty = true;
 		String a;
@@ -160,7 +174,7 @@ public:
 		return ready;
 	}
 
-	_FORCE_INLINE_ Frame &set_ready_true(Semaphore *ready_sem, page_id page, frame_id frame) {
+	_FORCE_INLINE_ Frame &set_ready_true(Semaphore *ready_sem) {
 		// A page cannot be dirty before it is ready.
 		CRASH_COND(!ready && dirty)
 		ready = true;
@@ -169,11 +183,10 @@ public:
 		return *this;
 	}
 
-	_FORCE_INLINE_ Frame &set_ready_false(frame_id frame) {
+	_FORCE_INLINE_ Frame &set_ready_false() {
 		// A page that is dirty must always be ready.
 		CRASH_COND(dirty)
 		ready = false;
-		// WARN_PRINTS("frame " + itoh(frame) + "not ready.");
 		return *this;
 	}
 
