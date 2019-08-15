@@ -47,7 +47,7 @@ private:
 	Semaphore *sem;
 
 	CtrlOp pop() {
-
+		// We keep this loop to catch the case where the semaphore is triggered even when the queue is empty.
 		while (true) {
 
 			while (queue.empty()) {
@@ -58,6 +58,7 @@ private:
 
 			// We only need to lock when accessing the queue.
 			MutexLock ml(mut);
+			// If the queue isn't empty, we can pop. otherwise, loop back around and wait for the queue to be filled.
 			if (!queue.empty()) {
 				CtrlOp op = queue.front()->get();
 				queue.pop_front();
@@ -84,7 +85,7 @@ public:
 		MutexLock ml = MutexLock(mut);
 		queue.push_back(op);
 		sem->post();
-		WARN_PRINTS("Pushed op")
+		// WARN_PRINTS("Pushed op")
 	}
 
 	/**
@@ -94,7 +95,7 @@ public:
 		MutexLock ml = MutexLock(mut);
 		queue.push_front(op);
 		sem->post();
-		WARN_PRINTS("Priority pushed op.")
+		// WARN_PRINTS("Priority pushed op.")
 	}
 };
 

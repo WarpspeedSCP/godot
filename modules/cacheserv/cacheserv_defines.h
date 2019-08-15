@@ -66,4 +66,11 @@
 		}                                                                                                                                            \
 	}
 
+#ifndef DEBUG_ENABLED
+
+#undef WARN_PRINTS
+#define WARN_PRINTS(msg)
+
+#endif
+
 #endif // CACHESERV_DEFINES_H

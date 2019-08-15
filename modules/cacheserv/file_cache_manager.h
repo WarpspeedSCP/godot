@@ -152,19 +152,19 @@ private:
 	//
 	// Expects the file pointer to be valid.
 	//
-	// Leaves the file pointer valid.
+	// Leaves the file pointer invalid.
 	void do_flush_close_op(DescriptorInfo *desc_info);
 
 protected:
 public:
 	typedef void (FileCacheManager::*insertion_policy_fn)(page_id);
-	typedef page_id (FileCacheManager::*replacement_policy_fn)(DescriptorInfo *, page_id *, frame_id *);
+	typedef page_id (FileCacheManager::*replacement_policy_fn)(DescriptorInfo *);
 	typedef void (FileCacheManager::*update_policy_fn)(page_id);
 	typedef void (FileCacheManager::*removal_policy_fn)(page_id);
 
-	page_id rp_lru(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
-	page_id rp_fifo(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
-	page_id rp_keep(DescriptorInfo *desc_info, page_id *curr_page, frame_id *curr_frame);
+	page_id rp_lru(DescriptorInfo *desc_info);
+	page_id rp_fifo(DescriptorInfo *desc_info);
+	page_id rp_keep(DescriptorInfo *desc_info);
 
 	void rmp_lru(page_id curr_page);
 	void rmp_fifo(page_id curr_page);
