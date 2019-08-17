@@ -975,6 +975,7 @@ bool FileCacheManager::get_page_or_do_paging_op(DescriptorInfo *desc_info, size_
 
 			if (frames[i]->get_used() == false) {
 
+				// This is the only place where a frame's owning_page value is used, that could change.
 				DescriptorInfo **old_desc_info = files.getptr(frames[i]->get_owning_page() >> 40);
 
 				if (old_desc_info)

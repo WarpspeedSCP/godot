@@ -215,8 +215,8 @@ public:
 	//
 	// The file is already tracked and is closed. The file is reopened with the mode and cache policy specified.
 	//
-	// Returns an invalid RID if the file is currently already open.
-	// Returns an invalid RID if the file cannot be opened similarly to the normal FileAccess API.
+	// Returns an invalid RID if the file is currently already open. Only one FileAccessCached instance can hold the RID for one file.
+	// Returns an invalid RID if the file cannot be opened; this is similar to the normal FileAccess API.
 	RID open(const String &path, int p_mode, int cache_policy);
 
 	// Close the file but keep its contents in the cache. None of the state information is invalidated.
@@ -256,8 +256,9 @@ public:
 	String get_path(RID rid) const; /// returns the path for the current open file
 	String get_path_absolute(RID rid); /// returns the absolute path for the current open file
 
-	void seek(RID rid, size_t p_position) { seek(rid, p_position, SEEK_SET); } ///< seek to a given position
-	void seek_end(RID rid, int64_t p_position) { seek(rid, p_position, SEEK_END); } ///< seek from the end of file
+	_FORCE_INLINE_ void seek(RID rid, size_t p_position) { seek(rid, p_position, SEEK_SET); } ///< seek to a given position
+	_FORCE_INLINE_ void seek_end(RID rid, int64_t p_position) { seek(rid, p_position, SEEK_END); } ///< seek from the end of file
+
 	size_t get_position(RID rid) const { return files[rid.get_id()]->offset; } ///< get position in the file
 	size_t get_len(RID rid) const; ///< get size of the file
 
