@@ -239,11 +239,11 @@ void FileCacheManager::enqueue_load(DescriptorInfo *desc_info, frame_id curr_fra
 	// WARN_PRINTS("Enqueueing load for file " + desc_info->path + " at frame " + itoh(curr_frame) + " at offset " + itoh(offset))
 
 	if (offset > desc_info->total_size) {
+
 		// We can zero fill the current frame and return if the
 		// current page is higher than the size of the file, to
 		// prevent accidentally reading old data.
-		// Not sure if this can cause a deadlock yet.
-		// TODO: Investigate possible deadlocks.
+
 		// WARN_PRINTS("Accessed out of bounds, reading zeroes.");
 		memset(Frame::DataWrite(frames[curr_frame], desc_info, true).ptr(), 0, CS_PAGE_SIZE);
 		frames[curr_frame]->set_ready_true(desc_info->ready_sem);
@@ -291,18 +291,13 @@ void FileCacheManager::enqueue_flush_close(DescriptorInfo *desc_info) {
 }
 
 void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
-	// Get data from data source somehow...
-	//	ERR_PRINTS("Start load op with file: " + desc_info->path + " page: " + itoh(curr_page) + " frame: " + itoh(curr_frame))
-	// Wait until the file is open.
-	if (desc_info->valid != true) {
-		CRASH_NOW_MSG("File not open!") //(!desc_info->valid)
-	}
+	// ERR_PRINTS("Start load op with file: " + desc_info->path + " page: " + itoh(curr_page) + " frame: " + itoh(curr_frame))
+
+	CRASH_COND_MSG(desc_info->valid != true, "File not open!")
 
 	if ((offset + CS_PAGE_SIZE) < desc_info->total_size) {
 		if (check_incomplete_page_load(desc_info, curr_page, curr_frame, offset)) {
-			CRASH_NOW_MSG("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.");
-		} else {
-			//ERR_PRINTS("Read size : " + itoh(frames[curr_frame]->used_size));
+			ERR_PRINTS("Read less than " STRINGIFY(CS_PAGE_SIZE) " bytes.");
 		}
 	} else {
 		check_incomplete_page_load(desc_info, curr_page, curr_frame, offset);
@@ -311,7 +306,6 @@ void FileCacheManager::do_load_op(DescriptorInfo *desc_info, page_id curr_page, 
 	//	ERR_PRINTS("End load op with file: " + desc_info->path + " page: " + itoh(curr_page) + " frame: " + itoh(curr_frame))
 }
 
-// !!! takes mutable references to all params.
 void FileCacheManager::do_store_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
 	// store back to data source somehow...
 
@@ -357,18 +351,20 @@ void FileCacheManager::do_flush_close_op(DescriptorInfo *desc_info) {
 	desc_info->internal_data_source->close();
 	memdelete(desc_info->internal_data_source);
 	desc_info->internal_data_source = NULL;
+
 	desc_info->dirty = false;
 	desc_info->valid = false;
+	// Posting on this semaphore allows FileCacheManager::close to continue executing.
 	desc_info->ready_sem->post();
-	//ERR_PRINTS("flushed and closed file " + desc_info->path)
+
+	// ERR_PRINTS("flushed and closed file " + desc_info->path)
 }
 
-// !!! takes mutable references to all params.
-// The offset param is used to track temporary changes to file offset.
+// The offset parameter is for logging purposes.
 //
-//  Returns true if a read from the current offset returns less than CS_PAGE_SIZE bytes.
+// Returns true if a read from the current offset returns less than CS_PAGE_SIZE bytes.
 //
-// This operation updates the used_size value of the page holder.
+// This operation updates the used_size value of the frame.
 _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
 
 	desc_info->internal_data_source->seek(CS_GET_FILE_OFFSET_FROM_GUID(curr_page));
@@ -396,14 +392,11 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_load(DescriptorInfo 
 	return (used_size < CS_PAGE_SIZE) && (used_size != 0);
 }
 
-// !!! takes mutable references to all params.
-// The extra_offset param is used to track temporary changes to file offset.
+// The offset parameter is for logging purposes.
 //
-//  Returns true if -
-//	1. A write from the current offset returns less than CS_PAGE_SIZE bytes and,
-//  2. The current page is not the last page of the file.
+//  Returns true if the internal data source can't write to the file.
 //
-// This operation updates the used_size value of the page holder.
+// This operation updates the used_size value of the frame.
 _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset) {
 
 	if (!desc_info->valid) {
@@ -416,7 +409,7 @@ _FORCE_INLINE_ bool FileCacheManager::check_incomplete_page_store(DescriptorInfo
 		Frame::DataRead r(frames[curr_frame], desc_info);
 
 		desc_info->internal_data_source->store_buffer(r.ptr(), frames[curr_frame]->get_used_size());
-		frames[curr_frame]->set_dirty_false(desc_info->dirty_sem, curr_frame); //.set_ready_true(desc_info->sem, curr_page, curr_frame);
+		frames[curr_frame]->set_dirty_false(desc_info->dirty_sem, curr_frame);
 	}
 	return desc_info->internal_data_source->get_error() == ERR_FILE_CANT_WRITE;
 }
@@ -431,7 +424,8 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 	DescriptorInfo *desc_info = *elem;
 	size_t read_length = length;
 
-	if ((desc_info->offset + read_length) / desc_info->total_size > 0) {
+	// If we try to read a region partially outside the file.
+	if ((desc_info->offset + read_length) - desc_info->total_size > 0) {
 		//WARN_PRINTS("Reached EOF before reading " + itoh(read_length) + " bytes.");
 		read_length = desc_info->total_size - desc_info->offset;
 	}
@@ -454,17 +448,15 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 
 		// The end offset of the first page may not be greater than the start offset of the next page.
 		initial_end_offset = MIN(initial_start_offset + read_length, initial_end_offset);
+
 		//WARN_PRINTS("Reading first page with values:\ninitial_start_offset: " + itoh(initial_start_offset) + "\ninitial_end_offset: " + itoh(initial_end_offset) + "\n read size: " + itoh(initial_end_offset - initial_start_offset));
 
 		{ // Lock the page holder for the operation.
 			//WARN_PRINTS("Locking frame " + itoh(curr_frame) + " with page " + itoh(curr_page))
 			Frame::DataRead r(frames[curr_frame], desc_info);
 
-			// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info->offset)
+			// Here, frames[curr_frame].memory_region + CS_PARTIAL_SIZE(desc_info->offset)
 			//  gives us the address of the first byte to copy which may or may not be on a page boundary.
-			//
-			// We can copy only CS_PAGE_SIZE - PARTIAL_SIZE(desc_info->offset) which gives us the number
-			//  of bytes from the current offset to the end of the page.
 			memcpy(
 					(uint8_t *)buffer + buffer_offset,
 					r.ptr() + CS_PARTIAL_SIZE(initial_start_offset),
@@ -482,7 +474,6 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 		CRASH_COND((curr_page = get_page_guid(desc_info, desc_info->offset + buffer_offset, true)) == (page_id)CS_MEM_VAL_BAD);
 		// Get frame mapped to page.
 		CRASH_COND((curr_frame = page_frame_map[curr_page]) == (frame_id)CS_MEM_VAL_BAD);
-		// Here, frames[curr_frame].memory_region + PARTIAL_SIZE(desc_info->offset) gives us the start
 
 		//WARN_PRINTS("Reading intermediate page.\nbuffer_offset: " + itoh(buffer_offset) + "\nread_length: " + itoh(read_length) + "\ncurrent offset: " + itoh(desc_info->offset));
 
@@ -508,9 +499,9 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 		// Get frame mapped to page.
 		CRASH_COND((curr_frame = page_frame_map[curr_page]) == (frame_id)CS_MEM_VAL_BAD);
 
-		// CRASH_COND(final_partial_length > Frame::MetaRead(frames[curr_frame], desc_info->lock).get_used_size());
+		// This is if
+		size_t temp_read_len = MIN(read_length, frames[curr_frame]->get_used_size());
 
-		size_t temp_read_len = CLAMP(read_length, 0, frames[curr_frame]->get_used_size());
 		//WARN_PRINTS("Reading last page.\nread_length: " + itoh(read_length) + "\ntemp_read_len: " + itoh(temp_read_len));
 
 		{ // Lock last page for reading data.
@@ -528,7 +519,7 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 
 	if (read_length > 0) //WARN_PRINTS("Unread length: " + itoh(length - read_length) + " bytes.")
 
-		CRASH_COND(read_length > 0);
+		ERR_PRINTS("Read only : " + itos(length - read_length) + " bytes.");
 
 	// TODO: Document this. Reads that exceed EOF will cause the remaining buffer space to be zeroed out.
 	if ((desc_info->offset + length) / desc_info->total_size > 0) {
@@ -544,7 +535,6 @@ size_t FileCacheManager::read(const RID rid, void *const buffer, size_t length) 
 // Similar to the read operation but opposite data flow.
 size_t FileCacheManager::write(const RID rid, const void *const data, size_t length) {
 	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
-	// TODO: Copy on write functionality for OOB writes.
 
 	ERR_FAIL_COND_V_MSG(!elem, CS_MEM_VAL_BAD, "No such file")
 
@@ -652,24 +642,21 @@ size_t FileCacheManager::write(const RID rid, const void *const data, size_t len
 			if (frames[curr_frame]->get_used_size() == CS_PAGE_SIZE) {
 			} else {
 				if (CS_PARTIAL_SIZE(temp_write_len) > frames[curr_frame]->get_used_size())
-					frames[curr_frame]->set_used_size(CS_PARTIAL_SIZE(temp_write_len));
+					frames[curr_frame]->set_used_size(temp_write_len);
 			}
 			frames[curr_frame]->set_dirty_true();
 		}
 		data_offset += temp_write_len;
 		write_length -= temp_write_len;
 	}
-	if (write_length > 0) WARN_PRINTS("Unwritten length: " + itoh(length - write_length) + " bytes.")
+	if (write_length > 0) ERR_PRINTS("Wrote only: " + itos(length - write_length) + " bytes.")
 
-		CRASH_COND(write_length > 0);
-
-	// If the write exceeds the file's
 	desc_info->offset += data_offset;
 
 	return data_offset;
 }
 
-// The seek operation just uses the POSIX seek modes, which will probably get replaced later.
+// The seek operation just uses the POSIX seek modes.
 size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 
 	DescriptorInfo **elem = files.getptr(RID_REF_TO_DD);
@@ -730,7 +717,9 @@ size_t FileCacheManager::seek(const RID rid, int64_t new_offset, int mode) {
 						// And the distance between the pages in the vicinity of the new region and the current offset is large enough...
 						ABSDIFF(
 								eff_offset + (CS_FIFO_THRESH_DEFAULT * CS_PAGE_SIZE / 2),
-								(int64_t)i->get().offset) > CS_FIFO_THRESH_DEFAULT) {
+								(int64_t)i->get().offset
+						) > CS_FIFO_THRESH_DEFAULT
+					) {
 
 					CtrlOp l = i->get();
 
