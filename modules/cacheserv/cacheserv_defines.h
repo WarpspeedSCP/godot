@@ -32,10 +32,9 @@
 #define CACHESERV_DEFINES_H
 
 #define CS_PAGE_SIZE 0x1000
-#define CS_CACHE_SIZE (CS_PAGE_SIZE * 16)
+#define CS_CACHE_SIZE (CS_PAGE_SIZE * 64)
 #define CS_MEM_VAL_BAD ~0
 #define CS_NUM_FRAMES ((CS_CACHE_SIZE) / (CS_PAGE_SIZE))
-#define CS_MIN(a, b) a < b ? a : b
 #define CS_FIFO_THRESH_DEFAULT 8
 #define CS_LRU_THRESH_DEFAULT 8
 #define CS_KEEP_THRESH_DEFAULT 8
@@ -58,12 +57,20 @@
 
 #define CS_GET_LENGTH_IN_PAGES(length) (((length) / CS_PAGE_SIZE) + CS_PARTIAL_SIZE(length))
 
-#define ERR_COND_ACTION(m_cond, m_message, m_action)                                                                                                    \
-	{                                                                                                                                                \
-		if (unlikely(m_cond)) {                                                                                                                      \
-			_err_print_error(FUNCTION_STR, __FILE__, __LINE__, ("Condition ' " _STR(m_cond) " ' is true. Message: " + m_message).utf8().get_data()); \
-			m_action                                                                                                                                    \
-		}                                                                                                                                            \
+#define ERR_COND_MSG_ACTION(m_cond, m_message, m_action)                                                                                                     \
+	{                                                                                                                                                        \
+		if (unlikely(m_cond)) {                                                                                                                              \
+			_err_print_error(FUNCTION_STR, __FILE__, __LINE__, (String("Condition ' " _STR(m_cond) " ' is true. Message: ") + m_message).utf8().get_data()); \
+			m_action                                                                                                                                         \
+		}                                                                                                                                                    \
+	}
+
+#define ERR_COND_ACTION(m_cond, m_action)                                                                  \
+	{                                                                                                      \
+		if (unlikely(m_cond)) {                                                                            \
+			_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition ' " _STR(m_cond) " ' is true."); \
+			m_action                                                                                       \
+		}                                                                                                  \
 	}
 
 #ifndef DEBUG_ENABLED

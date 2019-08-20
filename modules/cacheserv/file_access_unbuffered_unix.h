@@ -54,7 +54,6 @@ class FileAccessUnbufferedUnix : public FileAccess {
 	int flags;
 	struct stat st;
 	void check_errors() const;
-	int check_errors(int val /* , int mode */) const;
 	void check_errors(int val, int expected, int mode);
 	mutable Error last_error;
 	String save_path;
@@ -66,41 +65,37 @@ class FileAccessUnbufferedUnix : public FileAccess {
 public:
 
 	Error unbuffered_open(const String &p_path, int p_mode_flags);
-	virtual Error _open(const String &p_path, int p_mode_flags); ///< open a file
+	Error _open(const String &p_path, int p_mode_flags); ///< open a file
 	// Error open();
-	virtual void close(); ///< close a file
-	virtual bool is_open() const; ///< true when file is open
+	void close(); ///< close a file
+	bool is_open() const; ///< true when file is open
 
-	virtual String get_path() const; /// returns the path for the current open file
-	virtual String get_path_absolute() const; /// returns the absolute path for the current open file
+	String get_path() const; /// returns the path for the current open file
+	String get_path_absolute() const; /// returns the absolute path for the current open file
 
-	virtual void seek(size_t p_position); ///< seek to a given position
-	virtual void seek_end(int64_t p_position = 0); ///< seek from the end of file
-	virtual size_t get_position() const; ///< get position in the file
+	void seek(size_t p_position); ///< seek to a given position
+	void seek_end(int64_t p_position = 0); ///< seek from the end of file
+	size_t get_position() const; ///< get position in the file
 
-	virtual size_t get_len() const; ///< get size of the file
-	size_t get_len(); ///< Get size of file, updates internal stat struct if file sizew has changed.
+	size_t get_len() const; ///< get size of the file
 
-	virtual bool eof_reached() const; ///< reading passed EOF
+	bool eof_reached() const; ///< reading passed EOF
 
-	virtual uint8_t get_8() const; ///< get a byte
-	virtual int get_buffer(uint8_t *p_dst, int p_length) const;
+	uint8_t get_8() const; ///< get a byte
+	int get_buffer(uint8_t *p_dst, int p_length) const;
 	int get_buffer(uint8_t *p_dst, int p_length); // Use state info to catch errors.
 
-	virtual Error get_error() const; ///< get last error
+	Error get_error() const; ///< get last error
 
-	virtual void flush();
-	virtual void store_8(uint8_t p_byte); ///< store a byte
-	virtual void store_buffer(const uint8_t *p_src, int p_length); ///< store an array of bytes
+	void flush();
+	void store_8(uint8_t p_byte); ///< store a byte
+	void store_buffer(const uint8_t *p_src, int p_length); ///< store an array of bytes
 
-	virtual bool file_exists(const String &p_path); ///< return true if a file exists
+	bool file_exists(const String &p_path); ///< return true if a file exists
 
-	virtual uint64_t _get_modified_time(const String &p_file);
+	uint64_t _get_modified_time(const String &p_file);
 
-	virtual Error _chmod(const String &p_path, int p_mod);
-
-	// virtual uint32_t _get_unix_permissions(const String &p_file) {return ;}
-	// virtual Error _set_unix_permissions(const String &p_file, uint32_t p_permissions) {}
+	Error _chmod(const String &p_path, int p_mod);
 
 	FileAccessUnbufferedUnix();
 	virtual ~FileAccessUnbufferedUnix();

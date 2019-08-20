@@ -81,6 +81,7 @@ public:
 		memdelete(sem);
 	}
 
+	// Pushes to the back ofthe queue.
 	void push(CtrlOp op) {
 		MutexLock ml = MutexLock(mut);
 		queue.push_back(op);
@@ -88,9 +89,8 @@ public:
 		// WARN_PRINTS("Pushed op")
 	}
 
-	/**
-	 * Pushes to the queue's front, so the pushed operation is processed ASAP.
-	 */
+
+	// Pushes to the queue's front, so the pushed operation is processed ASAP.
 	void priority_push(CtrlOp op) {
 		MutexLock ml = MutexLock(mut);
 		queue.push_front(op);

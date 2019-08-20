@@ -8,8 +8,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <unistd.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #ifndef ANDROID_ENABLED
 #include <sys/statvfs.h>
@@ -17,18 +17,11 @@
 
 void FileAccessUnbufferedUnix::check_errors() const {}
 
-// Returns -1 if the value is less than 0 and the value otherwise.
-int FileAccessUnbufferedUnix::check_errors(int val) const {
-	//ERR_PRINTS("Value is : " + itoh(val));
-	ERR_FAIL_COND_V(val < 0, -1);
-	return val;
-}
-
 void FileAccessUnbufferedUnix::check_errors(int val, int expected, int mode) {
 
 	CRASH_COND(fd < 0);
 
-	switch(mode) {
+	switch (mode) {
 		case CHK_MODE_SEEK:
 			if (val >= st.st_size) {
 				//ERR_PRINTS("Seeked to EOF.");
@@ -41,16 +34,15 @@ void FileAccessUnbufferedUnix::check_errors(int val, int expected, int mode) {
 			if (val == -1) {
 				ERR_PRINTS("Write error with file " + this->path);
 				last_error = ERR_FILE_CANT_WRITE;
-			}
-			else if(val != expected) {
+			} else if (val != expected) {
 				ERR_PRINTS("Wrote " + itoh(val) + " instead of " + itoh(expected) + " bytes from " + this->path);
 				last_error = ERR_FILE_EOF;
 			}
 		case CHK_MODE_READ:
-			if(val == -1) {
+			if (val == -1) {
 				ERR_PRINTS("Read error with file " + this->path);
 				last_error = ERR_FILE_CANT_READ;
-			} else if(val != expected) {
+			} else if (val != expected) {
 				ERR_PRINTS("Read " + itoh(val) + " instead of " + itoh(expected) + " bytes from " + this->path);
 				last_error = ERR_FILE_EOF;
 			}
@@ -87,7 +79,8 @@ Error FileAccessUnbufferedUnix::_open(const String &p_path, int p_mode_flags) {
 			case S_IFREG:
 				break;
 			default:
-				return ERR_FILE_CANT_OPEN;
+				last_error = ERR_FILE_CANT_OPEN;
+				return last_error;
 		}
 	}
 
@@ -100,11 +93,11 @@ Error FileAccessUnbufferedUnix::_open(const String &p_path, int p_mode_flags) {
 
 	if (fd < 0) {
 		last_error = ERR_FILE_CANT_OPEN;
-		return ERR_FILE_CANT_OPEN;
+		return last_error;
 	} else {
 		last_error = OK;
 		flags = p_mode_flags;
-		return OK;
+		return last_error;
 	}
 }
 
@@ -154,29 +147,25 @@ String FileAccessUnbufferedUnix::get_path_absolute() const {
 void FileAccessUnbufferedUnix::seek(size_t p_position) {
 
 	ERR_FAIL_COND(fd < 0);
-	ERR_FAIL_COND(p_position < 0);
 
 	last_error = OK;
 
 	int old_pos = pos;
 
-	if(p_position >= st.st_size) {
+	if (p_position >= st.st_size) {
 
 		pos = ::lseek(fd, 0, SEEK_END);
-
 	} else {
 
-		pos = ::lseek(fd, p_position, SEEK_SET);;
-
+		pos = ::lseek(fd, p_position, SEEK_SET);
 	}
 
+	ERR_COND_ACTION(pos < 0,);
 	if (pos == -1) {
 		pos = old_pos;
-		ERR_FAIL();
 	}
 
 	check_errors(pos, p_position, CHK_MODE_SEEK);
-
 }
 
 void FileAccessUnbufferedUnix::seek_end(int64_t p_position) {
@@ -201,7 +190,8 @@ size_t FileAccessUnbufferedUnix::get_position() const {
 	CRASH_COND(fd < 0);
 
 	long pos = ::lseek(fd, 0, SEEK_CUR);
-	return check_errors(pos);
+	ERR_FAIL_COND_V_MSG(pos < 0, -1, "lseek returned " + itos(pos));
+	return pos;
 }
 
 size_t FileAccessUnbufferedUnix::get_len() const {
@@ -227,8 +217,7 @@ uint8_t FileAccessUnbufferedUnix::get_8() const {
 
 	CRASH_COND(fd < 0);
 	uint8_t b;
-	if (check_errors(read(fd, &b, 1)) < 0)
-		b = '\0';
+	ERR_COND_MSG_ACTION(read(fd, &b, 1) < 1, "Could not read byte.", { b = '\0'; });
 	return b;
 }
 
@@ -236,8 +225,7 @@ uint8_t FileAccessUnbufferedUnix::get_8() const {
 int FileAccessUnbufferedUnix::get_buffer(uint8_t *p_dst, int p_length) const {
 
 	CRASH_COND(fd < 0);
-	return check_errors(read(fd, p_dst, p_length));
-
+	return read(fd, p_dst, p_length);
 };
 
 Error FileAccessUnbufferedUnix::get_error() const {
@@ -248,12 +236,12 @@ Error FileAccessUnbufferedUnix::get_error() const {
 void FileAccessUnbufferedUnix::store_8(uint8_t p_byte) {
 
 	CRASH_COND(fd < 0);
-	CRASH_COND(write(fd, &p_byte, 1) != 1);
+	ERR_FAIL_COND(write(fd, &p_byte, 1) != 1);
 }
 
 void FileAccessUnbufferedUnix::store_buffer(const uint8_t *p_src, int p_length) {
 	CRASH_COND(fd < 0);
-	CRASH_COND_MSG(write(fd, p_src, p_length) < p_length, "Wrote less than " + itos(p_length) + " bytes");
+	ERR_FAIL_COND(write(fd, p_src, p_length) < p_length);
 }
 
 bool FileAccessUnbufferedUnix::file_exists(const String &p_path) {
@@ -266,14 +254,9 @@ bool FileAccessUnbufferedUnix::file_exists(const String &p_path) {
 	if (err)
 		return false;
 
-#ifdef UNIX_ENABLED
 	// See if we have access to the file
 	if (access(filename.utf8().get_data(), F_OK))
 		return false;
-#else
-	if (_access(filename.utf8().get_data(), 4) == -1)
-		return false;
-#endif
 
 	// See if this is a regular file
 	switch (st.st_mode & S_IFMT) {
@@ -306,12 +289,10 @@ Error FileAccessUnbufferedUnix::_chmod(const String &p_path, int p_mod) {
 	return FAILED;
 }
 
-
 // Flush does not make sense for unbuffered IO so it has only checks and does not actually do anything.
 void FileAccessUnbufferedUnix::flush() {
 
 	ERR_FAIL_COND(fd < 0);
-
 }
 
 FileAccess *FileAccessUnbufferedUnix::create_unbuf_unix() {
@@ -324,6 +305,7 @@ CloseNotificationFunc FileAccessUnbufferedUnix::close_notification_func = NULL;
 FileAccessUnbufferedUnix::FileAccessUnbufferedUnix() :
 		fd(-1),
 		flags(0),
+		pos(0),
 		last_error(OK) {
 }
 
