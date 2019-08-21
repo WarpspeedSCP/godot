@@ -64,6 +64,7 @@ private:
 				queue.pop_front();
 				return op;
 			}
+
 		}
 	}
 
@@ -85,8 +86,11 @@ public:
 	void push(CtrlOp op) {
 		MutexLock ml = MutexLock(mut);
 		queue.push_back(op);
+		// for (List<CtrlOp>::Element *i = queue.front(); i; i = i->next())
+		// 	WARN_PRINTS("Curr op: " + String(i->get().type == CtrlOp::LOAD ? "load" : "other") + " op with page: " + itoh(i->get().offset) + " and frame: " + itoh(i->get().frame))
 		sem->post();
-		// WARN_PRINTS("Pushed op")
+
+//		WARN_PRINTS("Pushed " + String(op.type == CtrlOp::LOAD ? "load" : "other") + " op with page: " + itoh(op.offset) + " and frame: " + itoh(op.frame))
 	}
 
 

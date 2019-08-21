@@ -78,7 +78,7 @@ protected:
 		cache_mgr->check_cache(cached_file, sizeof(T));
 		size_t o_length = cache_mgr->read(cached_file, &buf, sizeof(T));
 		if (o_length < sizeof(T)) {
-			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
+			ERR_PRINTS("Read less than " + itos(sizeof(T)) + " byte(s).");
 		}
 		return buf;
 	}
@@ -89,7 +89,7 @@ protected:
 		cache_mgr->check_cache(cached_file, sizeof(T));
 		size_t o_length = cache_mgr->write(cached_file, &buf, sizeof(T));
 		if (o_length < sizeof(T)) {
-			ERR_PRINTS("Read less than " + itoh(sizeof(T)) + " byte(s).");
+			ERR_PRINTS("Read less than " + itos(sizeof(T)) + " byte(s).");
 		}
 	}
 
@@ -163,7 +163,7 @@ public:
 			o_length += cache_mgr->read(cached_file, p_dst + (p_length - (p_length % (CS_PAGE_SIZE * 4))), (p_length % (4 * CS_PAGE_SIZE)));
 		}
 		if (p_length > o_length) {
-			ERR_PRINTS("Read less than " + itoh(p_length) + " bytes.\n");
+			ERR_PRINTS("Read less than " + itos(p_length) + " bytes.\n");
 		}
 		return o_length;
 	} ///< get an array of bytes
@@ -191,7 +191,7 @@ public:
 		}
 
 		if (p_length > o_length) {
-			//ERR_PRINTS("Wrote less than " + itoh(p_length) + " bytes.\n");
+			ERR_PRINTS("Wrote less than " + itos(p_length) + " bytes.\n");
 		}
 	} ///< store an array of bytes
 

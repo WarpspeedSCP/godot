@@ -208,6 +208,13 @@ public:
 		return *this;
 	}
 
+	_FORCE_INLINE_ Frame &wait_ready(Semaphore *sem) {
+		while (ready != true)
+			sem->wait();
+		// ERR_PRINTS("Page is clean.")
+		return *this;
+	}
+
 	_FORCE_INLINE_ uint16_t get_used_size() {
 		return used_size;
 	}
@@ -219,13 +226,15 @@ public:
 
 	Variant to_variant() const {
 		Dictionary a;
-		String s = String((char *)memory_region);
-		s.resize(100);
-		a["memory_region"] = Variant(" ... " + s + " ... ");
+		char s[101] = {0};
+		memcpy(s, memory_region, 100);
+
+		a["memory_region"] = Variant(itoh(reinterpret_cast<size_t>(memory_region)) +  " # " + s + " ... ");
 		a["used_size"] = Variant(itoh(used_size));
 		a["time_since_last_use"] = Variant(itoh(ts_last_use));
 		a["used"] = Variant(used);
 		a["dirty"] = Variant(dirty);
+		a["ready"] = Variant(ready);
 
 		return Variant(a);
 	}

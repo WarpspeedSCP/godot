@@ -121,8 +121,25 @@ private:
 	RID add_data_source(RID rid, FileAccess *data_source, int cache_policy);
 	void remove_data_source(RID rid);
 
-	bool check_incomplete_page_load(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
-	bool check_incomplete_page_store(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
+	void track_page(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame) {
+
+	}
+
+	void replace_page(DescriptorInfo *desc_info, page_id curr_page) {
+
+	}
+
+	void untrack_page(DescriptorInfo *desc_info, page_id curr_page) {
+		frame_id curr_frame = page_frame_map[curr_page];
+		WARN_PRINTS("Untracking page: " + itoh(curr_page) + " mapped to frame: " + itoh(curr_frame) + " in file:  " + desc_info->path)
+
+		CS_GET_CACHE_POLICY_FN(cache_removal_policies, desc_info->cache_policy)(curr_page);
+
+		page_frame_map.erase(curr_page);
+		desc_info->pages.erase(curr_page);
+		frames[curr_frame]->wait_clean(desc_info->dirty_sem).set_used(false).set_ready_false().set_owning_page(0).set_used_size(0);
+	}
+
 	void do_load_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 	void do_store_op(DescriptorInfo *desc_info, page_id curr_page, frame_id curr_frame, size_t offset);
 
