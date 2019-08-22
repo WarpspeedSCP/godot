@@ -262,13 +262,13 @@ void FileCacheManager::enqueue_flush(DescriptorInfo *desc_info) {
 	{
 		MutexLock ml(op_queue.mut);
 		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e;) {
+			List<CtrlOp>::Element *next = e->next();
 			if (e->get().di == desc_info && e->get().type == CtrlOp::STORE) {
 				//  WARN_PRINTS("Deleting store op with offset: " + itoh(e->get().offset) + " frame: " + itoh(e->get().frame) + " file:  " + e->get().di->path)
 
-				List<CtrlOp>::Element *next = e->next();
 				e->erase();
-				e = next;
 			}
+			e = next;
 		}
 	}
 
@@ -281,11 +281,10 @@ void FileCacheManager::enqueue_flush_close(DescriptorInfo *desc_info) {
 	WARN_PRINTS("Enqueue flush & close op") {
 		MutexLock ml(op_queue.mut);
 		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e;) {
+			List<CtrlOp>::Element *next = e->next();
 			if (e->get().di == desc_info) {
 
 				// Make it so the page frame mapping is removed as well.
-
-				List<CtrlOp>::Element *next = e->next();
 
 				if (e->get().type == CtrlOp::LOAD) {
 					DescriptorInfo *desc_info = e->get().di;
@@ -293,8 +292,8 @@ void FileCacheManager::enqueue_flush_close(DescriptorInfo *desc_info) {
 				}
 
 				e->erase();
-				e = next;
 			}
+			e = next;
 		}
 	}
 	op_queue.priority_push(CtrlOp(desc_info, CS_MEM_VAL_BAD, CS_MEM_VAL_BAD, CtrlOp::FLUSH_CLOSE));
