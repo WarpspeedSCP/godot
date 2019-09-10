@@ -278,7 +278,8 @@ void FileCacheManager::enqueue_flush(DescriptorInfo *desc_info) {
 
 void FileCacheManager::enqueue_flush_close(DescriptorInfo *desc_info) {
 
-	WARN_PRINTS("Enqueue flush & close op") {
+	// WARN_PRINTS("Enqueue flush & close op")
+	{
 		MutexLock ml(op_queue.mut);
 		for (List<CtrlOp>::Element *e = op_queue.queue.front(); e;) {
 			List<CtrlOp>::Element *next = e->next();
