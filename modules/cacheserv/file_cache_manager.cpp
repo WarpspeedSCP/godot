@@ -1084,8 +1084,12 @@ void FileCacheManager::thread_func(void *p_udata) {
 		if (l.type == CtrlOp::QUIT)
 			break;
 
-		ERR_FAIL_COND(l.di == NULL);
-		if (l.di->valid == false) continue;
+		ERR_FAIL_COND_MSG(l.di == NULL, "Null file handle.")
+		if(l.di->valid == false) {
+			ERR_PRINTS("Invalid file");
+			fcs.untrack_page(l.di, get_page_guid(l.di, l.offset, false));
+			continue;
+		}
 
 		page_id curr_page = get_page_guid(l.di, l.offset, false);
 		frame_id curr_frame = fcs.page_frame_map[curr_page];
