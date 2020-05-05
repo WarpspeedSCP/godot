@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -68,6 +68,18 @@ Transform2D Transform2D::affine_inverse() const {
 
 void Transform2D::rotate(real_t p_phi) {
 	*this = Transform2D(p_phi, Vector2()) * (*this);
+}
+
+real_t Transform2D::get_skew() const {
+
+	real_t det = basis_determinant();
+	return Math::acos(elements[0].normalized().dot(SGN(det) * elements[1].normalized())) - Math_PI * 0.5;
+}
+
+void Transform2D::set_skew(float p_angle) {
+
+	real_t det = basis_determinant();
+	elements[1] = SGN(det) * elements[0].rotated((Math_PI * 0.5 + p_angle)).normalized() * elements[1].length();
 }
 
 real_t Transform2D::get_rotation() const {
@@ -147,11 +159,17 @@ void Transform2D::orthonormalize() {
 	elements[0] = x;
 	elements[1] = y;
 }
+
 Transform2D Transform2D::orthonormalized() const {
 
 	Transform2D on = *this;
 	on.orthonormalize();
 	return on;
+}
+
+bool Transform2D::is_equal_approx(const Transform2D &p_transform) const {
+
+	return elements[0].is_equal_approx(p_transform.elements[0]) && elements[1].is_equal_approx(p_transform.elements[1]) && elements[2].is_equal_approx(p_transform.elements[2]);
 }
 
 bool Transform2D::operator==(const Transform2D &p_transform) const {
@@ -261,7 +279,7 @@ Transform2D Transform2D::interpolate_with(const Transform2D &p_transform, real_t
 	Vector2 v;
 
 	if (dot > 0.9995) {
-		v = Vector2::linear_interpolate(v1, v2, p_c).normalized(); //linearly interpolate to avoid numerical precision issues
+		v = v1.lerp(v2, p_c).normalized(); //linearly interpolate to avoid numerical precision issues
 	} else {
 		real_t angle = p_c * Math::acos(dot);
 		Vector2 v3 = (v2 - v1 * dot).normalized();
@@ -269,8 +287,8 @@ Transform2D Transform2D::interpolate_with(const Transform2D &p_transform, real_t
 	}
 
 	//construct matrix
-	Transform2D res(Math::atan2(v.y, v.x), Vector2::linear_interpolate(p1, p2, p_c));
-	res.scale_basis(Vector2::linear_interpolate(s1, s2, p_c));
+	Transform2D res(Math::atan2(v.y, v.x), p1.lerp(p2, p_c));
+	res.scale_basis(s1.lerp(s2, p_c));
 	return res;
 }
 

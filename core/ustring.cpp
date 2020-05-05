@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,10 +28,14 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS // to disable build-time warning which suggested to use strcpy_s instead strcpy
+#endif
+
 #include "ustring.h"
 
 #include "core/color.h"
-#include "core/math/crypto_core.h"
+#include "core/crypto/crypto_core.h"
 #include "core/math/math_funcs.h"
 #include "core/os/memory.h"
 #include "core/print_string.h"
@@ -40,6 +44,7 @@
 #include "core/variant.h"
 
 #include <wchar.h>
+#include <cstdint>
 
 #ifndef NO_USE_STDLIB
 #include <stdio.h>
@@ -141,9 +146,11 @@ void CharString::copy_from(const char *p_cstr) {
 		return;
 	}
 
-	resize(len + 1); // include terminating null char
+	Error err = resize(++len); // include terminating null char
 
-	strcpy(ptrw(), p_cstr);
+	ERR_FAIL_COND_MSG(err != OK, "Failed to copy C-string.");
+
+	memcpy(ptrw(), p_cstr, len);
 }
 
 void String::copy_from(const char *p_cstr) {
@@ -198,7 +205,7 @@ void String::copy_from(const CharType *p_cstr, const int p_clip_to) {
 }
 
 // assumes the following have already been validated:
-// p_char != NULL
+// p_char != nullptr
 // p_length > 0
 // p_length <= p_char strlen
 void String::copy_from_unchecked(const CharType *p_char, const int p_length) {
@@ -639,6 +646,17 @@ String String::camelcase_to_underscore(bool lowercase) const {
 	return lowercase ? new_string.to_lower() : new_string;
 }
 
+String String::get_with_code_lines() const {
+	const Vector<String> lines = split("\n");
+	String ret;
+	for (int i = 0; i < lines.size(); i++) {
+		if (i > 0) {
+			ret += "\n";
+		}
+		ret += vformat("%4d | %s", i + 1, lines[i]);
+	}
+	return ret;
+}
 int String::get_slice_count(String p_splitter) const {
 
 	if (empty())
@@ -1336,7 +1354,17 @@ String String::num_scientific(double p_num) {
 	char buf[256];
 
 #if defined(__GNUC__) || defined(_MSC_VER)
+
+#if (defined(__MINGW32__) || (defined(_MSC_VER) && _MSC_VER < 1900)) && defined(_TWO_DIGIT_EXPONENT) && !defined(_UCRT)
+	// MinGW and old MSC require _set_output_format() to conform to C99 output for printf
+	unsigned int old_exponent_format = _set_output_format(_TWO_DIGIT_EXPONENT);
+#endif
 	snprintf(buf, 256, "%lg", p_num);
+
+#if (defined(__MINGW32__) || (defined(_MSC_VER) && _MSC_VER < 1900)) && defined(_TWO_DIGIT_EXPONENT) && !defined(_UCRT)
+	_set_output_format(old_exponent_format);
+#endif
+
 #else
 	sprintf(buf, "%.16lg", p_num);
 #endif
@@ -1374,7 +1402,7 @@ String String::utf8(const char *p_utf8, int p_len) {
 
 bool String::parse_utf8(const char *p_utf8, int p_len) {
 
-#define _UNICERROR(m_err) print_line("Unicode error: " + String(m_err));
+#define _UNICERROR(m_err) print_line("Unicode parsing error: " + String(m_err) + ". Is the string valid UTF-8?");
 
 	if (!p_utf8)
 		return true;
@@ -1405,7 +1433,7 @@ bool String::parse_utf8(const char *p_utf8, int p_len) {
 
 			if (skip == 0) {
 
-				uint8_t c = *ptrtmp;
+				uint8_t c = *ptrtmp >= 0 ? *ptrtmp : uint8_t(256 + *ptrtmp);
 
 				/* Determine the number of characters in sequence */
 				if ((c & 0x80) == 0)
@@ -1612,7 +1640,7 @@ CharString String::utf8() const {
 /*
 String::String(CharType p_char) {
 
-	shared=NULL;
+	shared=nullptr;
 	copy_from(p_char);
 }
 */
@@ -1668,6 +1696,7 @@ int String::hex_to_int(bool p_with_prefix) const {
 			return 0;
 		}
 
+		ERR_FAIL_COND_V_MSG(hex > INT32_MAX / 16, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + *this + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 		hex *= 16;
 		hex += n;
 		s++;
@@ -1709,6 +1738,7 @@ int64_t String::hex_to_int64(bool p_with_prefix) const {
 			return 0;
 		}
 
+		ERR_FAIL_COND_V_MSG(hex > INT64_MAX / 16, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 		hex *= 16;
 		hex += n;
 		s++;
@@ -1748,6 +1778,7 @@ int64_t String::bin_to_int64(bool p_with_prefix) const {
 			return 0;
 		}
 
+		ERR_FAIL_COND_V_MSG(binary > INT64_MAX / 2, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 		binary *= 2;
 		binary += n;
 		s++;
@@ -1771,6 +1802,7 @@ int String::to_int() const {
 		CharType c = operator[](i);
 		if (c >= '0' && c <= '9') {
 
+			ERR_FAIL_COND_V_MSG(integer > INT32_MAX / 10, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + *this + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 			integer *= 10;
 			integer += c - '0';
 
@@ -1798,6 +1830,7 @@ int64_t String::to_int64() const {
 		CharType c = operator[](i);
 		if (c >= '0' && c <= '9') {
 
+			ERR_FAIL_COND_V_MSG(integer > INT64_MAX / 10, sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + *this + " as 64-bit integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 			integer *= 10;
 			integer += c - '0';
 
@@ -1828,6 +1861,7 @@ int String::to_int(const char *p_str, int p_len) {
 		char c = p_str[i];
 		if (c >= '0' && c <= '9') {
 
+			ERR_FAIL_COND_V_MSG(integer > INT32_MAX / 10, sign == 1 ? INT32_MAX : INT32_MIN, "Cannot represent " + String(p_str).substr(0, to) + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
 			integer *= 10;
 			integer += c - '0';
 
@@ -1879,7 +1913,7 @@ static double built_in_strtod(const C *string, /* A decimal ASCII floating-point
 				 * necessary unless F is present. The "E" may
 				 * actually be an "e". E and X may both be
 				 * omitted (but not just one). */
-		C **endPtr = NULL) /* If non-NULL, store terminating Cacter's
+		C **endPtr = nullptr) /* If non-nullptr, store terminating Cacter's
 				 * address here. */
 {
 
@@ -1900,7 +1934,7 @@ static double built_in_strtod(const C *string, /* A decimal ASCII floating-point
 		1.0e256
 	};
 
-	int sign, expSign = false;
+	bool sign, expSign = false;
 	double fraction, dblExp;
 	const double *d;
 	const C *p;
@@ -2067,7 +2101,7 @@ static double built_in_strtod(const C *string, /* A decimal ASCII floating-point
 	}
 
 done:
-	if (endPtr != NULL) {
+	if (endPtr != nullptr) {
 		*endPtr = (C *)p;
 	}
 
@@ -2135,11 +2169,20 @@ int64_t String::to_int(const CharType *p_str, int p_len) {
 				} else {
 					break;
 				}
+				[[fallthrough]];
 			}
 			case READING_INT: {
 
 				if (c >= '0' && c <= '9') {
 
+					if (integer > INT64_MAX / 10) {
+						String number("");
+						str = p_str;
+						while (*str && str != limit) {
+							number += *(str++);
+						}
+						ERR_FAIL_V_MSG(sign == 1 ? INT64_MAX : INT64_MIN, "Cannot represent " + number + " as integer, provided value is " + (sign == 1 ? "too big." : "too small."));
+					}
 					integer *= 10;
 					integer += c - '0';
 				} else {
@@ -2159,7 +2202,7 @@ double String::to_double() const {
 		return 0;
 #ifndef NO_USE_STDLIB
 	return built_in_strtod<CharType>(c_str());
-//return wcstod(c_str(),NULL); DOES NOT WORK ON ANDROID :(
+//return wcstod(c_str(),nullptr ); DOES NOT WORK ON ANDROID :(
 #else
 	return built_in_strtod<CharType>(c_str());
 #endif
@@ -3034,6 +3077,22 @@ String String::replacen(const String &p_key, const String &p_with) const {
 	return new_string;
 }
 
+String String::repeat(int p_count) const {
+
+	ERR_FAIL_COND_V_MSG(p_count < 0, "", "Parameter count should be a positive number.");
+
+	String new_string;
+	const CharType *src = this->c_str();
+
+	new_string.resize(length() * p_count + 1);
+
+	for (int i = 0; i < p_count; i++)
+		for (int j = 0; j < length(); j++)
+			new_string[i * length() + j] = src[j];
+
+	return new_string;
+}
+
 String String::left(int p_pos) const {
 
 	if (p_pos <= 0)
@@ -3257,9 +3316,7 @@ String String::simplify_path() const {
 
 static int _humanize_digits(int p_num) {
 
-	if (p_num < 10)
-		return 2;
-	else if (p_num < 100)
+	if (p_num < 100)
 		return 2;
 	else if (p_num < 1024)
 		return 1;
@@ -3267,21 +3324,29 @@ static int _humanize_digits(int p_num) {
 		return 0;
 }
 
-String String::humanize_size(size_t p_size) {
+String String::humanize_size(uint64_t p_size) {
 
 	uint64_t _div = 1;
-	static const char *prefix[] = { " Bytes", " KB", " MB", " GB", " TB", " PB", " EB", "" };
+	Vector<String> prefixes;
+	prefixes.push_back(RTR("B"));
+	prefixes.push_back(RTR("KiB"));
+	prefixes.push_back(RTR("MiB"));
+	prefixes.push_back(RTR("GiB"));
+	prefixes.push_back(RTR("TiB"));
+	prefixes.push_back(RTR("PiB"));
+	prefixes.push_back(RTR("EiB"));
+
 	int prefix_idx = 0;
 
-	while (p_size > (_div * 1024) && prefix[prefix_idx][0]) {
+	while (prefix_idx < prefixes.size() - 1 && p_size > (_div * 1024)) {
 		_div *= 1024;
 		prefix_idx++;
 	}
 
-	int digits = prefix_idx > 0 ? _humanize_digits(p_size / _div) : 0;
-	double divisor = prefix_idx > 0 ? _div : 1;
+	const int digits = prefix_idx > 0 ? _humanize_digits(p_size / _div) : 0;
+	const double divisor = prefix_idx > 0 ? _div : 1;
 
-	return String::num(p_size / divisor).pad_decimals(digits) + prefix[prefix_idx];
+	return String::num(p_size / divisor).pad_decimals(digits) + " " + prefixes[prefix_idx];
 }
 bool String::is_abs_path() const {
 
@@ -3384,7 +3449,7 @@ String String::http_unescape() const {
 				CharType ord2 = ord_at(i + 2);
 				if ((ord2 >= '0' && ord2 <= '9') || (ord2 >= 'A' && ord2 <= 'Z')) {
 					char bytes[3] = { (char)ord1, (char)ord2, 0 };
-					res += (char)strtol(bytes, NULL, 16);
+					res += (char)strtol(bytes, nullptr, 16);
 					i += 2;
 				}
 			} else {
@@ -3568,7 +3633,7 @@ String String::xml_unescape() const {
 
 	String str;
 	int l = length();
-	int len = _xml_unescape(c_str(), l, NULL);
+	int len = _xml_unescape(c_str(), l, nullptr);
 	if (len == 0)
 		return String();
 	str.resize(len + 1);
@@ -3745,7 +3810,8 @@ bool String::is_valid_float() const {
 
 String String::path_to_file(const String &p_path) const {
 
-	String src = this->replace("\\", "/").get_base_dir();
+	// Don't get base dir for src, this is expected to be a dir already.
+	String src = this->replace("\\", "/");
 	String dst = p_path.replace("\\", "/").get_base_dir();
 	String rel = src.path_to(dst);
 	if (rel == dst) // failed
@@ -4007,6 +4073,19 @@ String String::percent_decode() const {
 	return String::utf8(pe.ptr());
 }
 
+String String::property_name_encode() const {
+	// Escape and quote strings with extended ASCII or further Unicode characters
+	// as well as '"', '=' or ' ' (32)
+	const CharType *cstr = c_str();
+	for (int i = 0; cstr[i]; i++) {
+		if (cstr[i] == '=' || cstr[i] == '"' || cstr[i] < 33 || cstr[i] > 126) {
+			return "\"" + c_escape_multiline() + "\"";
+		}
+	}
+	// Keep as is
+	return *this;
+}
+
 String String::get_basename() const {
 
 	int pos = find_last(".");
@@ -4019,6 +4098,11 @@ String String::get_basename() const {
 String itos(int64_t p_val) {
 
 	return String::num_int64(p_val);
+}
+
+String uitos(uint64_t p_val) {
+
+	return String::num_uint64(p_val);
 }
 
 String rtos(double p_val) {
@@ -4328,7 +4412,6 @@ String String::unquote() const {
 
 #ifdef TOOLS_ENABLED
 String TTR(const String &p_text) {
-
 	if (TranslationServer::get_singleton()) {
 		return TranslationServer::get_singleton()->tool_translate(p_text);
 	}
@@ -4336,10 +4419,18 @@ String TTR(const String &p_text) {
 	return p_text;
 }
 
+String DTR(const String &p_text) {
+	if (TranslationServer::get_singleton()) {
+		// Comes straight from the XML, so remove indentation and any trailing whitespace.
+		const String text = p_text.dedent().strip_edges();
+		return TranslationServer::get_singleton()->doc_translate(text);
+	}
+
+	return p_text;
+}
 #endif
 
 String RTR(const String &p_text) {
-
 	if (TranslationServer::get_singleton()) {
 		String rtr = TranslationServer::get_singleton()->tool_translate(p_text);
 		if (rtr == String() || rtr == p_text) {

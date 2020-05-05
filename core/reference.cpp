@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -36,12 +36,7 @@ bool Reference::init_ref() {
 
 	if (reference()) {
 
-		// this may fail in the scenario of two threads assigning the pointer for the FIRST TIME
-		// at the same time, which is never likely to happen (would be crazy to do)
-		// so don't do it.
-
-		if (refcount_init.get() > 0) {
-			refcount_init.unref();
+		if (!is_referenced() && refcount_init.unref()) {
 			unreference(); // first referencing is already 1, so compensate for the ref above
 		}
 
@@ -64,9 +59,11 @@ int Reference::reference_get_count() const {
 }
 
 bool Reference::reference() {
-	bool success = refcount.ref();
 
-	if (success && refcount.get() <= 2 /* higher is not relevant */) {
+	uint32_t rc_val = refcount.refval();
+	bool success = rc_val != 0;
+
+	if (success && rc_val <= 2 /* higher is not relevant */) {
 		if (get_script_instance()) {
 			get_script_instance()->refcount_incremented();
 		}
@@ -84,9 +81,10 @@ bool Reference::reference() {
 
 bool Reference::unreference() {
 
-	bool die = refcount.unref();
+	uint32_t rc_val = refcount.unrefval();
+	bool die = rc_val == 0;
 
-	if (refcount.get() <= 1 /* higher is not relevant */) {
+	if (rc_val <= 1 /* higher is not relevant */) {
 		if (get_script_instance()) {
 			bool script_ret = get_script_instance()->refcount_decremented();
 			die = die && script_ret;
@@ -104,7 +102,8 @@ bool Reference::unreference() {
 	return die;
 }
 
-Reference::Reference() {
+Reference::Reference() :
+		Object(true) {
 
 	refcount.init();
 	refcount_init.init();
@@ -115,7 +114,7 @@ Reference::~Reference() {
 
 Variant WeakRef::get_ref() const {
 
-	if (ref == 0)
+	if (ref.is_null())
 		return Variant();
 
 	Object *obj = ObjectDB::get_instance(ref);
@@ -131,16 +130,15 @@ Variant WeakRef::get_ref() const {
 }
 
 void WeakRef::set_obj(Object *p_object) {
-	ref = p_object ? p_object->get_instance_id() : 0;
+	ref = p_object ? p_object->get_instance_id() : ObjectID();
 }
 
 void WeakRef::set_ref(const REF &p_ref) {
 
-	ref = p_ref.is_valid() ? p_ref->get_instance_id() : 0;
+	ref = p_ref.is_valid() ? p_ref->get_instance_id() : ObjectID();
 }
 
-WeakRef::WeakRef() :
-		ref(0) {
+WeakRef::WeakRef() {
 }
 
 void WeakRef::_bind_methods() {

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -35,20 +35,20 @@
 #include "core/os/copymem.h"
 #include "core/os/file_access.h"
 
-ZipArchive *ZipArchive::instance = NULL;
+ZipArchive *ZipArchive::instance = nullptr;
 
 extern "C" {
 
 static void *godot_open(void *data, const char *p_fname, int mode) {
 
 	if (mode & ZLIB_FILEFUNC_MODE_WRITE) {
-		return NULL;
+		return nullptr;
 	}
 
 	FileAccess *f = (FileAccess *)data;
 	f->open(p_fname, FileAccess::READ);
 
-	return f->is_open() ? data : NULL;
+	return f->is_open() ? data : nullptr;
 }
 
 static uLong godot_read(void *data, void *fdata, void *buf, uLong size) {
@@ -117,7 +117,7 @@ static void godot_free(voidpf opaque, voidpf address) {
 
 void ZipArchive::close_handle(unzFile p_file) const {
 
-	ERR_FAIL_COND(!p_file);
+	ERR_FAIL_COND_MSG(!p_file, "Cannot close a file if none is open.");
 	FileAccess *f = (FileAccess *)unzGetOpaque(p_file);
 	unzCloseCurrentFile(p_file);
 	unzClose(p_file);
@@ -126,11 +126,11 @@ void ZipArchive::close_handle(unzFile p_file) const {
 
 unzFile ZipArchive::get_file_handle(String p_file) const {
 
-	ERR_FAIL_COND_V(!file_exists(p_file), NULL);
+	ERR_FAIL_COND_V_MSG(!file_exists(p_file), nullptr, "File '" + p_file + " doesn't exist.");
 	File file = files[p_file];
 
 	FileAccess *f = FileAccess::open(packages[file.package].filename, FileAccess::READ);
-	ERR_FAIL_COND_V(!f, NULL);
+	ERR_FAIL_COND_V_MSG(!f, nullptr, "Cannot open file '" + packages[file.package].filename + "'.");
 
 	zlib_filefunc_def io;
 	zeromem(&io, sizeof(io));
@@ -149,18 +149,18 @@ unzFile ZipArchive::get_file_handle(String p_file) const {
 	io.free_mem = godot_free;
 
 	unzFile pkg = unzOpen2(packages[file.package].filename.utf8().get_data(), &io);
-	ERR_FAIL_COND_V(!pkg, NULL);
+	ERR_FAIL_COND_V(!pkg, nullptr);
 	int unz_err = unzGoToFilePos(pkg, &file.file_pos);
 	if (unz_err != UNZ_OK || unzOpenCurrentFile(pkg) != UNZ_OK) {
 
 		unzClose(pkg);
-		ERR_FAIL_V(NULL);
+		ERR_FAIL_V(nullptr);
 	}
 
 	return pkg;
 }
 
-bool ZipArchive::try_open_pack(const String &p_path) {
+bool ZipArchive::try_open_pack(const String &p_path, bool p_replace_files) {
 
 	//printf("opening zip pack %ls, %i, %i\n", p_name.c_str(), p_name.extension().nocasecmp_to("zip"), p_name.extension().nocasecmp_to("pcz"));
 	if (p_path.get_extension().nocasecmp_to("zip") != 0 && p_path.get_extension().nocasecmp_to("pcz") != 0)
@@ -194,12 +194,12 @@ bool ZipArchive::try_open_pack(const String &p_path) {
 	packages.push_back(pkg);
 	int pkg_num = packages.size() - 1;
 
-	for (unsigned int i = 0; i < gi.number_entry; i++) {
+	for (uint64_t i = 0; i < gi.number_entry; i++) {
 
 		char filename_inzip[256];
 
 		unz_file_info64 file_info;
-		err = unzGetCurrentFileInfo64(zfile, &file_info, filename_inzip, sizeof(filename_inzip), NULL, 0, NULL, 0);
+		err = unzGetCurrentFileInfo64(zfile, &file_info, filename_inzip, sizeof(filename_inzip), nullptr, 0, nullptr, 0);
 		ERR_CONTINUE(err != UNZ_OK);
 
 		File f;
@@ -210,7 +210,7 @@ bool ZipArchive::try_open_pack(const String &p_path) {
 		files[fname] = f;
 
 		uint8_t md5[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-		PackedData::get_singleton()->add_path(p_path, fname, 1, 0, md5, this);
+		PackedData::get_singleton()->add_path(p_path, fname, 1, 0, md5, this, p_replace_files);
 		//printf("packed data add path %ls, %ls\n", p_name.c_str(), fname.c_str());
 
 		if ((i + 1) < gi.number_entry) {
@@ -233,7 +233,7 @@ FileAccess *ZipArchive::get_file(const String &p_path, PackedData::PackedFile *p
 
 ZipArchive *ZipArchive::get_singleton() {
 
-	if (instance == NULL) {
+	if (instance == nullptr) {
 		instance = memnew(ZipArchive);
 	}
 
@@ -268,7 +268,7 @@ Error FileAccessZip::_open(const String &p_path, int p_mode_flags) {
 	zfile = arch->get_file_handle(p_path);
 	ERR_FAIL_COND_V(!zfile, FAILED);
 
-	int err = unzGetCurrentFileInfo64(zfile, &file_info, NULL, 0, NULL, 0, NULL, 0);
+	int err = unzGetCurrentFileInfo64(zfile, &file_info, nullptr, 0, nullptr, 0, nullptr, 0);
 	ERR_FAIL_COND_V(err != UNZ_OK, FAILED);
 
 	return OK;
@@ -282,12 +282,12 @@ void FileAccessZip::close() {
 	ZipArchive *arch = ZipArchive::get_singleton();
 	ERR_FAIL_COND(!arch);
 	arch->close_handle(zfile);
-	zfile = NULL;
+	zfile = nullptr;
 }
 
 bool FileAccessZip::is_open() const {
 
-	return zfile != NULL;
+	return zfile != nullptr;
 }
 
 void FileAccessZip::seek(size_t p_position) {
@@ -370,7 +370,7 @@ bool FileAccessZip::file_exists(const String &p_name) {
 }
 
 FileAccessZip::FileAccessZip(const String &p_path, const PackedData::PackedFile &p_file) :
-		zfile(NULL) {
+		zfile(nullptr) {
 	_open(p_path, FileAccess::READ);
 }
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -43,7 +43,7 @@ Error AudioDriverXAudio2::init() {
 	thread_exited = false;
 	exit_thread = false;
 	pcm_open = false;
-	samples_in = NULL;
+	samples_in = nullptr;
 
 	mix_rate = GLOBAL_DEF_RST("audio/mix_rate", DEFAULT_MIX_RATE);
 	// FIXME: speaker_mode seems unused in the Xaudio2 driver so far
@@ -63,15 +63,10 @@ Error AudioDriverXAudio2::init() {
 
 	HRESULT hr;
 	hr = XAudio2Create(&xaudio, 0, XAUDIO2_DEFAULT_PROCESSOR);
-	if (hr != S_OK) {
-		ERR_EXPLAIN("Error creating XAudio2 engine.");
-		ERR_FAIL_V(ERR_UNAVAILABLE);
-	}
+	ERR_FAIL_COND_V_MSG(hr != S_OK, ERR_UNAVAILABLE, "Error creating XAudio2 engine.");
+
 	hr = xaudio->CreateMasteringVoice(&mastering_voice);
-	if (hr != S_OK) {
-		ERR_EXPLAIN("Error creating XAudio2 mastering voice.");
-		ERR_FAIL_V(ERR_UNAVAILABLE);
-	}
+	ERR_FAIL_COND_V_MSG(hr != S_OK, ERR_UNAVAILABLE, "Error creating XAudio2 mastering voice.");
 
 	wave_format.nChannels = channels;
 	wave_format.cbSize = 0;
@@ -82,12 +77,8 @@ Error AudioDriverXAudio2::init() {
 	wave_format.nAvgBytesPerSec = mix_rate * wave_format.nBlockAlign;
 
 	hr = xaudio->CreateSourceVoice(&source_voice, &wave_format, 0, XAUDIO2_MAX_FREQ_RATIO, &voice_callback);
-	if (hr != S_OK) {
-		ERR_EXPLAIN("Error creating XAudio2 source voice. " + itos(hr));
-		ERR_FAIL_V(ERR_UNAVAILABLE);
-	}
+	ERR_FAIL_COND_V_MSG(hr != S_OK, ERR_UNAVAILABLE, "Error creating XAudio2 source voice. Error code: " + itos(hr) + ".");
 
-	mutex = Mutex::create();
 	thread = Thread::create(AudioDriverXAudio2::thread_func, this);
 
 	return OK;
@@ -140,10 +131,7 @@ void AudioDriverXAudio2::start() {
 
 	active = true;
 	HRESULT hr = source_voice->Start(0);
-	if (hr != S_OK) {
-		ERR_EXPLAIN("XAudio2 start error " + itos(hr));
-		ERR_FAIL();
-	}
+	ERR_FAIL_COND_MSG(hr != S_OK, "Error starting XAudio2 driver. Error code: " + itos(hr) + ".");
 }
 
 int AudioDriverXAudio2::get_mix_rate() const {
@@ -169,15 +157,15 @@ float AudioDriverXAudio2::get_latency() {
 
 void AudioDriverXAudio2::lock() {
 
-	if (!thread || !mutex)
+	if (!thread)
 		return;
-	mutex->lock();
+	mutex.lock();
 }
 void AudioDriverXAudio2::unlock() {
 
-	if (!thread || !mutex)
+	if (!thread)
 		return;
-	mutex->unlock();
+	mutex.unlock();
 }
 
 void AudioDriverXAudio2::finish() {
@@ -205,14 +193,11 @@ void AudioDriverXAudio2::finish() {
 	mastering_voice->DestroyVoice();
 
 	memdelete(thread);
-	if (mutex)
-		memdelete(mutex);
-	thread = NULL;
+	thread = nullptr;
 }
 
 AudioDriverXAudio2::AudioDriverXAudio2() :
-		thread(NULL),
-		mutex(NULL),
+		thread(nullptr),
 		current_buffer(0) {
 	wave_format = { 0 };
 	for (int i = 0; i < AUDIO_BUFFERS; i++) {

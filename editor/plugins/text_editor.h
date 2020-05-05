@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -46,7 +46,7 @@ private:
 	MenuButton *edit_menu;
 	PopupMenu *highlighter_menu;
 	MenuButton *search_menu;
-	MenuButton *bookmarks_menu;
+	PopupMenu *bookmarks_menu;
 	PopupMenu *context_menu;
 
 	GotoLineDialog *goto_line_dialog;
@@ -87,6 +87,8 @@ private:
 		SEARCH_FIND_NEXT,
 		SEARCH_FIND_PREV,
 		SEARCH_REPLACE,
+		SEARCH_IN_FILES,
+		REPLACE_IN_FILES,
 		SEARCH_GOTO_LINE,
 		BOOKMARK_TOGGLE,
 		BOOKMARK_GOTO_NEXT,
@@ -100,7 +102,7 @@ protected:
 	void _notification(int p_what);
 
 	void _edit_option(int p_op);
-	void _make_context_menu(bool p_selection, bool p_can_fold, bool p_is_folded);
+	void _make_context_menu(bool p_selection, bool p_can_fold, bool p_is_folded, Vector2 p_position);
 	void _text_edit_gui_input(const Ref<InputEvent> &ev);
 
 	Map<String, SyntaxHighlighter *> highlighters;
@@ -119,7 +121,7 @@ public:
 	virtual void set_syntax_highlighter(SyntaxHighlighter *p_highlighter);
 
 	virtual String get_name();
-	virtual Ref<Texture> get_icon();
+	virtual Ref<Texture2D> get_theme_icon();
 	virtual RES get_edited_resource() const;
 	virtual void set_edited_resource(const RES &p_res);
 	void set_edited_file(const Ref<TextFile> &p_file);
@@ -145,7 +147,7 @@ public:
 	virtual bool can_lose_focus_on_node_selection() { return true; }
 	virtual void set_debugger_active(bool p_active);
 	virtual void set_tooltip_request_func(String p_method, Object *p_obj);
-	virtual void add_callback(const String &p_function, PoolStringArray p_args);
+	virtual void add_callback(const String &p_function, PackedStringArray p_args);
 
 	virtual Control *get_edit_menu();
 	virtual void clear_edit_menu();

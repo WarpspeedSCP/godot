@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -82,9 +82,9 @@ void ResourceImporterWAV::get_import_options(List<ImportOption> *r_options, int 
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "force/8_bit"), false));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "force/mono"), false));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "force/max_rate", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), false));
-	r_options->push_back(ImportOption(PropertyInfo(Variant::REAL, "force/max_rate_hz", PROPERTY_HINT_EXP_RANGE, "11025,192000,1"), 44100));
-	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "edit/trim"), true));
-	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "edit/normalize"), true));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "force/max_rate_hz", PROPERTY_HINT_EXP_RANGE, "11025,192000,1"), 44100));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "edit/trim"), false));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "edit/normalize"), false));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "edit/loop"), false));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::INT, "compress/mode", PROPERTY_HINT_ENUM, "Disabled,RAM (Ima-ADPCM)"), 0));
 }
@@ -96,7 +96,7 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 	Error err;
 	FileAccess *file = FileAccess::open(p_source_file, FileAccess::READ, &err);
 
-	ERR_FAIL_COND_V(err != OK, ERR_CANT_OPEN);
+	ERR_FAIL_COND_V_MSG(err != OK, ERR_CANT_OPEN, "Cannot open file '" + p_source_file + "'.");
 
 	/* CHECK RIFF */
 	char riff[5];
@@ -123,8 +123,7 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 
 		file->close();
 		memdelete(file);
-		ERR_EXPLAIN("Not a WAV file (no WAVE RIFF Header)");
-		ERR_FAIL_V(ERR_FILE_UNRECOGNIZED);
+		ERR_FAIL_V_MSG(ERR_FILE_UNRECOGNIZED, "Not a WAV file (no WAVE RIFF header).");
 	}
 
 	int format_bits = 0;
@@ -166,16 +165,14 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 			if (compression_code != 1 && compression_code != 3) {
 				file->close();
 				memdelete(file);
-				ERR_EXPLAIN("Format not supported for WAVE file (not PCM). Save WAVE files as uncompressed PCM instead.");
-				ERR_FAIL_V(ERR_INVALID_DATA);
+				ERR_FAIL_V_MSG(ERR_INVALID_DATA, "Format not supported for WAVE file (not PCM). Save WAVE files as uncompressed PCM instead.");
 			}
 
 			format_channels = file->get_16();
 			if (format_channels != 1 && format_channels != 2) {
 				file->close();
 				memdelete(file);
-				ERR_EXPLAIN("Format not supported for WAVE file (not stereo or mono).");
-				ERR_FAIL_V(ERR_INVALID_DATA);
+				ERR_FAIL_V_MSG(ERR_INVALID_DATA, "Format not supported for WAVE file (not stereo or mono).");
 			}
 
 			format_freq = file->get_32(); //sampling rate
@@ -187,8 +184,7 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 			if (format_bits % 8 || format_bits == 0) {
 				file->close();
 				memdelete(file);
-				ERR_EXPLAIN("Invalid amount of bits in the sample (should be one of 8, 16, 24 or 32).");
-				ERR_FAIL_V(ERR_INVALID_DATA);
+				ERR_FAIL_V_MSG(ERR_INVALID_DATA, "Invalid amount of bits in the sample (should be one of 8, 16, 24 or 32).");
 			}
 
 			/* Don't need anything else, continue */
@@ -258,8 +254,7 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 			if (file->eof_reached()) {
 				file->close();
 				memdelete(file);
-				ERR_EXPLAIN("Premature end of file.");
-				ERR_FAIL_V(ERR_FILE_CORRUPT);
+				ERR_FAIL_V_MSG(ERR_FILE_CORRUPT, "Premature end of file.");
 			}
 		}
 
@@ -472,7 +467,7 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 		is16 = false;
 	}
 
-	PoolVector<uint8_t> dst_data;
+	Vector<uint8_t> dst_data;
 	AudioStreamSample::Format dst_format;
 
 	if (compression == 1) {
@@ -495,8 +490,8 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 				right.write[i] = data[i * 2 + 1];
 			}
 
-			PoolVector<uint8_t> bleft;
-			PoolVector<uint8_t> bright;
+			Vector<uint8_t> bleft;
+			Vector<uint8_t> bright;
 
 			_compress_ima_adpcm(left, bleft);
 			_compress_ima_adpcm(right, bright);
@@ -504,9 +499,9 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 			int dl = bleft.size();
 			dst_data.resize(dl * 2);
 
-			PoolVector<uint8_t>::Write w = dst_data.write();
-			PoolVector<uint8_t>::Read rl = bleft.read();
-			PoolVector<uint8_t>::Read rr = bright.read();
+			uint8_t *w = dst_data.ptrw();
+			const uint8_t *rl = bleft.ptr();
+			const uint8_t *rr = bright.ptr();
 
 			for (int i = 0; i < dl; i++) {
 				w[i * 2 + 0] = rl[i];
@@ -519,7 +514,7 @@ Error ResourceImporterWAV::import(const String &p_source_file, const String &p_s
 		dst_format = is16 ? AudioStreamSample::FORMAT_16_BITS : AudioStreamSample::FORMAT_8_BITS;
 		dst_data.resize(data.size() * (is16 ? 2 : 1));
 		{
-			PoolVector<uint8_t>::Write w = dst_data.write();
+			uint8_t *w = dst_data.ptrw();
 
 			int ds = data.size();
 			for (int i = 0; i < ds; i++) {

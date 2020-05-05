@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,9 +39,6 @@
 #include "scene/gui/spin_box.h"
 #include "scene/gui/texture_button.h"
 
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
 class AnimationTrackEditor;
 class AnimationPlayerEditorPlugin;
 
@@ -108,11 +105,11 @@ class AnimationPlayerEditor : public VBoxContainer {
 	LineEdit *name;
 	Label *name_title;
 	UndoRedo *undo_redo;
-	Ref<Texture> autoplay_icon;
+	Ref<Texture2D> autoplay_icon;
 	bool last_active;
+	float timeline_position;
 
 	EditorFileDialog *file;
-	AcceptDialog *accept;
 	ConfirmationDialog *delete_dialog;
 	int current_option;
 
@@ -133,9 +130,9 @@ class AnimationPlayerEditor : public VBoxContainer {
 
 	AnimationTrackEditor *track_editor;
 
-	// Onion skinning
+	// Onion skinning.
 	struct {
-		// Settings
+		// Settings.
 		bool enabled;
 		bool past;
 		bool future;
@@ -145,11 +142,11 @@ class AnimationPlayerEditor : public VBoxContainer {
 		bool include_gizmos;
 
 		int get_needed_capture_count() const {
-			// 'Differences only' needs a capture of the present
+			// 'Differences only' needs a capture of the present.
 			return (past && future ? 2 * steps : steps) + (differences_only ? 1 : 0);
 		}
 
-		// Rendering
+		// Rendering.
 		int64_t last_frame;
 		int can_overlay;
 		Size2 capture_size;
@@ -164,6 +161,7 @@ class AnimationPlayerEditor : public VBoxContainer {
 	} onion;
 
 	void _select_anim_by_name(const String &p_anim);
+	double _get_editor_step() const;
 	void _play_pressed();
 	void _play_from_pressed();
 	void _play_bw_pressed();
@@ -197,8 +195,6 @@ class AnimationPlayerEditor : public VBoxContainer {
 	void _update_player();
 	void _blend_edited();
 
-	void _hide_anim_editors();
-
 	void _animation_player_changed(Object *p_pl);
 
 	void _animation_key_editor_seek(float p_pos, bool p_drag);
@@ -207,13 +203,13 @@ class AnimationPlayerEditor : public VBoxContainer {
 	void _unhandled_key_input(const Ref<InputEvent> &p_ev);
 	void _animation_tool_menu(int p_option);
 	void _onion_skinning_menu(int p_option);
-	void _animation_about_to_show_menu();
 
 	void _editor_visibility_changed();
 	bool _are_onion_layers_valid();
 	void _allocate_onion_layers();
 	void _free_onion_layers();
 	void _prepare_onion_layers_1();
+	void _prepare_onion_layers_1_deferred();
 	void _prepare_onion_layers_2();
 	void _start_onion_skinning();
 	void _stop_onion_skinning();

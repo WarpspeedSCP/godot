@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -70,7 +70,10 @@ struct Transform2D {
 
 	void set_rotation(real_t p_rot);
 	real_t get_rotation() const;
+	real_t get_skew() const;
+	void set_skew(float p_angle);
 	_FORCE_INLINE_ void set_rotation_and_scale(real_t p_rot, const Size2 &p_scale);
+	_FORCE_INLINE_ void set_rotation_scale_and_skew(real_t p_rot, const Size2 &p_scale, float p_skew);
 	void rotate(real_t p_phi);
 
 	void scale(const Size2 &p_scale);
@@ -95,6 +98,7 @@ struct Transform2D {
 
 	void orthonormalize();
 	Transform2D orthonormalized() const;
+	bool is_equal_approx(const Transform2D &p_transform) const;
 
 	bool operator==(const Transform2D &p_transform) const;
 	bool operator!=(const Transform2D &p_transform) const;
@@ -110,6 +114,8 @@ struct Transform2D {
 	_FORCE_INLINE_ Vector2 xform_inv(const Vector2 &p_vec) const;
 	_FORCE_INLINE_ Rect2 xform(const Rect2 &p_rect) const;
 	_FORCE_INLINE_ Rect2 xform_inv(const Rect2 &p_rect) const;
+	_FORCE_INLINE_ Vector<Vector2> xform(const Vector<Vector2> &p_array) const;
+	_FORCE_INLINE_ Vector<Vector2> xform_inv(const Vector<Vector2> &p_array) const;
 
 	operator String() const;
 
@@ -181,6 +187,14 @@ void Transform2D::set_rotation_and_scale(real_t p_rot, const Size2 &p_scale) {
 	elements[0][1] = Math::sin(p_rot) * p_scale.x;
 }
 
+void Transform2D::set_rotation_scale_and_skew(real_t p_rot, const Size2 &p_scale, float p_skew) {
+
+	elements[0][0] = Math::cos(p_rot) * p_scale.x;
+	elements[1][1] = Math::cos(p_rot + p_skew) * p_scale.y;
+	elements[1][0] = -Math::sin(p_rot + p_skew) * p_scale.y;
+	elements[0][1] = Math::sin(p_rot) * p_scale.x;
+}
+
 Rect2 Transform2D::xform_inv(const Rect2 &p_rect) const {
 
 	Vector2 ends[4] = {
@@ -197,6 +211,34 @@ Rect2 Transform2D::xform_inv(const Rect2 &p_rect) const {
 	new_rect.expand_to(ends[3]);
 
 	return new_rect;
+}
+
+Vector<Vector2> Transform2D::xform(const Vector<Vector2> &p_array) const {
+
+	Vector<Vector2> array;
+	array.resize(p_array.size());
+
+	const Vector2 *r = p_array.ptr();
+	Vector2 *w = array.ptrw();
+
+	for (int i = 0; i < p_array.size(); ++i) {
+		w[i] = xform(r[i]);
+	}
+	return array;
+}
+
+Vector<Vector2> Transform2D::xform_inv(const Vector<Vector2> &p_array) const {
+
+	Vector<Vector2> array;
+	array.resize(p_array.size());
+
+	const Vector2 *r = p_array.ptr();
+	Vector2 *w = array.ptrw();
+
+	for (int i = 0; i < p_array.size(); ++i) {
+		w[i] = xform_inv(r[i]);
+	}
+	return array;
 }
 
 #endif // TRANSFORM_2D_H

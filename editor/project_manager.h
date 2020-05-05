@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -43,6 +43,7 @@ class ProjectList;
 class ProjectListFilter;
 
 class ProjectManager : public Control {
+
 	GDCLASS(ProjectManager, Control);
 
 	Button *erase_btn;
@@ -109,8 +110,8 @@ class ProjectManager : public Control {
 
 	void _dim_window();
 	void _unhandled_input(const Ref<InputEvent> &p_ev);
-	void _files_dropped(PoolStringArray p_files, int p_screen);
-	void _scan_multiple_folders(PoolStringArray p_files);
+	void _files_dropped(PackedStringArray p_files, int p_screen);
+	void _scan_multiple_folders(PackedStringArray p_files);
 
 	void _on_order_option_changed();
 	void _on_filter_option_changed();
@@ -132,7 +133,7 @@ public:
 	enum FilterOption {
 		FILTER_NAME,
 		FILTER_PATH,
-		FILTER_MODIFIED,
+		FILTER_EDIT_DATE,
 	};
 
 private:
@@ -152,6 +153,7 @@ protected:
 
 public:
 	void _setup_filters(Vector<String> options);
+	void add_filter_option();
 	void add_search_box();
 	void set_filter_size(int h_size);
 	String get_search_term();

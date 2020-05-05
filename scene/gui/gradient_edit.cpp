@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -54,7 +54,6 @@ GradientEdit::GradientEdit() {
 
 	checker = Ref<ImageTexture>(memnew(ImageTexture));
 	Ref<Image> img = memnew(Image(checker_bg_png));
-	checker->create_from_image(img, ImageTexture::FLAG_REPEAT);
 }
 
 int GradientEdit::_get_point_from_pos(int x) {
@@ -77,15 +76,15 @@ void GradientEdit::_show_color_picker() {
 	if (grabbed == -1)
 		return;
 	picker->set_pick_color(points[grabbed].color);
-	Size2 minsize = popup->get_combined_minimum_size();
+	Size2 minsize = popup->get_contents_minimum_size();
 	bool show_above = false;
 	if (get_global_position().y + get_size().y + minsize.y > get_viewport_rect().size.y) {
 		show_above = true;
 	}
 	if (show_above) {
-		popup->set_position(get_global_position() - Vector2(0, minsize.y));
+		popup->set_position(get_screen_position() - Vector2(0, minsize.y));
 	} else {
-		popup->set_position(get_global_position() + Vector2(0, get_size().y));
+		popup->set_position(get_screen_position() + Vector2(0, get_size().y));
 	}
 	popup->popup();
 }
@@ -97,7 +96,7 @@ void GradientEdit::_gui_input(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventKey> k = p_event;
 
-	if (k.is_valid() && k->is_pressed() && k->get_scancode() == KEY_DELETE && grabbed != -1) {
+	if (k.is_valid() && k->is_pressed() && k->get_keycode() == KEY_DELETE && grabbed != -1) {
 
 		points.remove(grabbed);
 		grabbed = -1;
@@ -208,7 +207,7 @@ void GradientEdit::_gui_input(const Ref<InputEvent> &p_event) {
 			prev = points[pos];
 		}
 
-		newPoint.color = prev.color.linear_interpolate(next.color, (newPoint.offset - prev.offset) / (next.offset - prev.offset));
+		newPoint.color = prev.color.lerp(next.color, (newPoint.offset - prev.offset) / (next.offset - prev.offset));
 
 		points.push_back(newPoint);
 		points.sort();
@@ -241,9 +240,13 @@ void GradientEdit::_gui_input(const Ref<InputEvent> &p_event) {
 
 		float newofs = CLAMP(x / float(total_w), 0, 1);
 
-		//Snap to nearest point if holding shift
-		if (mm->get_shift()) {
-			float snap_threshold = 0.03;
+		// Snap to "round" coordinates if holding Ctrl.
+		// Be more precise if holding Shift as well
+		if (mm->get_control()) {
+			newofs = Math::stepify(newofs, mm->get_shift() ? 0.025 : 0.1);
+		} else if (mm->get_shift()) {
+			// Snap to nearest point if holding just Shift
+			const float snap_threshold = 0.03;
 			float smallest_ofs = snap_threshold;
 			bool found = false;
 			int nearest_point = 0;
@@ -273,12 +276,13 @@ void GradientEdit::_gui_input(const Ref<InputEvent> &p_event) {
 
 			if (points[i].offset == newofs && i != grabbed) {
 				valid = false;
+				break;
 			}
 		}
 
-		if (!valid)
+		if (!valid || grabbed == -1) {
 			return;
-
+		}
 		points.write[grabbed].offset = newofs;
 
 		points.sort();
@@ -298,8 +302,8 @@ void GradientEdit::_gui_input(const Ref<InputEvent> &p_event) {
 void GradientEdit::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_ENTER_TREE) {
-		if (!picker->is_connected("color_changed", this, "_color_changed")) {
-			picker->connect("color_changed", this, "_color_changed");
+		if (!picker->is_connected("color_changed", callable_mp(this, &GradientEdit::_color_changed))) {
+			picker->connect("color_changed", callable_mp(this, &GradientEdit::_color_changed));
 		}
 	}
 	if (p_what == NOTIFICATION_DRAW) {
@@ -486,6 +490,5 @@ Vector<Gradient::Point> &GradientEdit::get_points() {
 
 void GradientEdit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_gui_input"), &GradientEdit::_gui_input);
-	ClassDB::bind_method(D_METHOD("_color_changed"), &GradientEdit::_color_changed);
 	ADD_SIGNAL(MethodInfo("ramp_changed"));
 }

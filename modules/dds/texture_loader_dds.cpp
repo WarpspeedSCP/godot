@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -94,7 +94,7 @@ static const DDSFormatInfo dds_format_info[DDS_MAX] = {
 	{ "GRAYSCALE_ALPHA", false, false, 1, 2, Image::FORMAT_LA8 }
 };
 
-RES ResourceFormatDDS::load(const String &p_path, const String &p_original_path, Error *r_error) {
+RES ResourceFormatDDS::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, bool p_no_cache) {
 
 	if (r_error)
 		*r_error = ERR_CANT_OPEN;
@@ -108,8 +108,7 @@ RES ResourceFormatDDS::load(const String &p_path, const String &p_original_path,
 	if (r_error)
 		*r_error = ERR_FILE_CORRUPT;
 
-	ERR_EXPLAIN("Unable to open DDS texture file: " + p_path);
-	ERR_FAIL_COND_V(err != OK, RES());
+	ERR_FAIL_COND_V_MSG(err != OK, RES(), "Unable to open DDS texture file '" + p_path + "'.");
 
 	uint32_t magic = f->get_32();
 	uint32_t hsize = f->get_32();
@@ -128,8 +127,7 @@ RES ResourceFormatDDS::load(const String &p_path, const String &p_original_path,
 
 	if (magic != DDS_MAGIC || hsize != 124 || !(flags & DDSD_PIXELFORMAT) || !(flags & DDSD_CAPS)) {
 
-		ERR_EXPLAIN("Invalid or Unsupported DDS texture file: " + p_path);
-		ERR_FAIL_V(RES());
+		ERR_FAIL_V_MSG(RES(), "Invalid or unsupported DDS texture file '" + p_path + "'.");
 	}
 
 	/* uint32_t format_size = */ f->get_32();
@@ -218,15 +216,13 @@ RES ResourceFormatDDS::load(const String &p_path, const String &p_original_path,
 	} else {
 
 		printf("unrecognized fourcc %x format_flags: %x - rgbbits %i - red_mask %x green mask %x blue mask %x alpha mask %x\n", format_fourcc, format_flags, format_rgb_bits, format_red_mask, format_green_mask, format_blue_mask, format_alpha_mask);
-		ERR_EXPLAIN("Unrecognized or Unsupported color layout in DDS: " + p_path);
-
-		ERR_FAIL_V(RES());
+		ERR_FAIL_V_MSG(RES(), "Unrecognized or unsupported color layout in DDS '" + p_path + "'.");
 	}
 
 	if (!(flags & DDSD_MIPMAPCOUNT))
 		mipmaps = 1;
 
-	PoolVector<uint8_t> src_data;
+	Vector<uint8_t> src_data;
 
 	const DDSFormatInfo &info = dds_format_info[dds_format];
 	uint32_t w = width;
@@ -249,8 +245,8 @@ RES ResourceFormatDDS::load(const String &p_path, const String &p_original_path,
 		}
 
 		src_data.resize(size);
-		PoolVector<uint8_t>::Write wb = src_data.write();
-		f->get_buffer(wb.ptr(), size);
+		uint8_t *wb = src_data.ptrw();
+		f->get_buffer(wb, size);
 
 	} else if (info.palette) {
 
@@ -282,8 +278,8 @@ RES ResourceFormatDDS::load(const String &p_path, const String &p_original_path,
 		}
 
 		src_data.resize(size + 256 * colsize);
-		PoolVector<uint8_t>::Write wb = src_data.write();
-		f->get_buffer(wb.ptr(), size);
+		uint8_t *wb = src_data.ptrw();
+		f->get_buffer(wb, size);
 
 		for (int i = 0; i < 256; i++) {
 
@@ -313,8 +309,8 @@ RES ResourceFormatDDS::load(const String &p_path, const String &p_original_path,
 			size = size * 2;
 
 		src_data.resize(size);
-		PoolVector<uint8_t>::Write wb = src_data.write();
-		f->get_buffer(wb.ptr(), size);
+		uint8_t *wb = src_data.ptrw();
+		f->get_buffer(wb, size);
 
 		switch (dds_format) {
 
@@ -461,7 +457,7 @@ void ResourceFormatDDS::get_recognized_extensions(List<String> *p_extensions) co
 
 bool ResourceFormatDDS::handles_type(const String &p_type) const {
 
-	return ClassDB::is_parent_class(p_type, "Texture");
+	return ClassDB::is_parent_class(p_type, "Texture2D");
 }
 
 String ResourceFormatDDS::get_resource_type(const String &p_path) const {

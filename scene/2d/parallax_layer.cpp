@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -69,13 +69,16 @@ Size2 ParallaxLayer::get_motion_offset() const {
 
 void ParallaxLayer::_update_mirroring() {
 
+	if (!is_inside_tree())
+		return;
+
 	ParallaxBackground *pb = Object::cast_to<ParallaxBackground>(get_parent());
 	if (pb) {
 
 		RID c = pb->get_canvas();
 		RID ci = get_canvas_item();
 		Point2 mirrorScale = mirroring * get_scale();
-		VisualServer::get_singleton()->canvas_set_item_mirroring(c, ci, mirrorScale);
+		RenderingServer::get_singleton()->canvas_set_item_mirroring(c, ci, mirrorScale);
 	}
 }
 

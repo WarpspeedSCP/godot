@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -53,6 +53,7 @@ class EditorPropertyText : public EditorProperty {
 	LineEdit *text;
 
 	bool updating;
+	bool string_name;
 	void _text_changed(const String &p_string);
 	void _text_entered(const String &p_string);
 
@@ -60,6 +61,7 @@ protected:
 	static void _bind_methods();
 
 public:
+	void set_string_name(bool p_enabled);
 	virtual void update_property();
 	void set_placeholder(const String &p_string);
 	EditorPropertyText();
@@ -91,12 +93,13 @@ class EditorPropertyTextEnum : public EditorProperty {
 	OptionButton *options;
 
 	void _option_selected(int p_which);
+	bool string_name;
 
 protected:
 	static void _bind_methods();
 
 public:
-	void setup(const Vector<String> &p_options);
+	void setup(const Vector<String> &p_options, bool p_string_name = false);
 	virtual void update_property();
 	EditorPropertyTextEnum();
 };
@@ -263,14 +266,14 @@ class EditorPropertyInteger : public EditorProperty {
 	GDCLASS(EditorPropertyInteger, EditorProperty);
 	EditorSpinSlider *spin;
 	bool setting;
-	void _value_changed(double p_val);
+	void _value_changed(int64_t p_val);
 
 protected:
 	static void _bind_methods();
 
 public:
 	virtual void update_property();
-	void setup(int p_min, int p_max, int p_step, bool p_allow_greater, bool p_allow_lesser);
+	void setup(int64_t p_min, int64_t p_max, int64_t p_step, bool p_allow_greater, bool p_allow_lesser);
 	EditorPropertyInteger();
 };
 
@@ -311,6 +314,7 @@ class EditorPropertyEasing : public EditorProperty {
 	EditorSpinSlider *spin;
 	bool setting;
 
+	bool dragging;
 	bool full;
 	bool flip;
 
@@ -357,7 +361,7 @@ protected:
 public:
 	virtual void update_property();
 	void setup(double p_min, double p_max, double p_step, bool p_no_slider);
-	EditorPropertyVector2();
+	EditorPropertyVector2(bool p_force_wide = false);
 };
 
 class EditorPropertyRect2 : public EditorProperty {
@@ -373,7 +377,7 @@ protected:
 public:
 	virtual void update_property();
 	void setup(double p_min, double p_max, double p_step, bool p_no_slider);
-	EditorPropertyRect2();
+	EditorPropertyRect2(bool p_force_wide = false);
 };
 
 class EditorPropertyVector3 : public EditorProperty {
@@ -389,7 +393,55 @@ protected:
 public:
 	virtual void update_property();
 	void setup(double p_min, double p_max, double p_step, bool p_no_slider);
-	EditorPropertyVector3();
+	EditorPropertyVector3(bool p_force_wide = false);
+};
+
+class EditorPropertyVector2i : public EditorProperty {
+	GDCLASS(EditorPropertyVector2i, EditorProperty);
+	EditorSpinSlider *spin[2];
+	bool setting;
+	void _value_changed(double p_val, const String &p_name);
+
+protected:
+	void _notification(int p_what);
+	static void _bind_methods();
+
+public:
+	virtual void update_property();
+	void setup(int p_min, int p_max, bool p_no_slider);
+	EditorPropertyVector2i(bool p_force_wide = false);
+};
+
+class EditorPropertyRect2i : public EditorProperty {
+	GDCLASS(EditorPropertyRect2i, EditorProperty);
+	EditorSpinSlider *spin[4];
+	bool setting;
+	void _value_changed(double p_val, const String &p_name);
+
+protected:
+	void _notification(int p_what);
+	static void _bind_methods();
+
+public:
+	virtual void update_property();
+	void setup(int p_min, int p_max, bool p_no_slider);
+	EditorPropertyRect2i(bool p_force_wide = false);
+};
+
+class EditorPropertyVector3i : public EditorProperty {
+	GDCLASS(EditorPropertyVector3i, EditorProperty);
+	EditorSpinSlider *spin[3];
+	bool setting;
+	void _value_changed(double p_val, const String &p_name);
+
+protected:
+	void _notification(int p_what);
+	static void _bind_methods();
+
+public:
+	virtual void update_property();
+	void setup(int p_min, int p_max, bool p_no_slider);
+	EditorPropertyVector3i(bool p_force_wide = false);
 };
 
 class EditorPropertyPlane : public EditorProperty {
@@ -405,7 +457,7 @@ protected:
 public:
 	virtual void update_property();
 	void setup(double p_min, double p_max, double p_step, bool p_no_slider);
-	EditorPropertyPlane();
+	EditorPropertyPlane(bool p_force_wide = false);
 };
 
 class EditorPropertyQuat : public EditorProperty {
@@ -493,6 +545,7 @@ class EditorPropertyColor : public EditorProperty {
 	ColorPickerButton *picker;
 	void _color_changed(const Color &p_color);
 	void _popup_closed();
+	void _picker_created();
 
 protected:
 	static void _bind_methods();
@@ -548,7 +601,8 @@ class EditorPropertyResource : public EditorProperty {
 		OBJ_MENU_COPY = 5,
 		OBJ_MENU_PASTE = 6,
 		OBJ_MENU_NEW_SCRIPT = 7,
-		OBJ_MENU_SHOW_IN_FILE_SYSTEM = 8,
+		OBJ_MENU_EXTEND_SCRIPT = 8,
+		OBJ_MENU_SHOW_IN_FILE_SYSTEM = 9,
 		TYPE_BASE_ID = 100,
 		CONVERT_BASE_ID = 1000
 
@@ -571,7 +625,7 @@ class EditorPropertyResource : public EditorProperty {
 
 	void _file_selected(const String &p_path);
 	void _menu_option(int p_which);
-	void _resource_preview(const String &p_path, const Ref<Texture> &p_preview, const Ref<Texture> &p_small_preview, ObjectID p_obj);
+	void _resource_preview(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, ObjectID p_obj);
 	void _resource_selected();
 	void _viewport_selected(const NodePath &p_path);
 
@@ -620,7 +674,7 @@ class EditorInspectorDefaultPlugin : public EditorInspectorPlugin {
 public:
 	virtual bool can_handle(Object *p_object);
 	virtual void parse_begin(Object *p_object);
-	virtual bool parse_property(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, int p_usage);
+	virtual bool parse_property(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, int p_usage, bool p_wide = false);
 	virtual void parse_end();
 };
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,11 +31,8 @@
 #ifndef MAP_H
 #define MAP_H
 
+#include "core/error_macros.h"
 #include "core/set.h"
-
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
 
 // based on the very nice implementation of rb-trees by:
 // https://web.archive.org/web/20120507164830/http://web.mit.edu/~emin/www/source_code/red_black_tree/index.html
@@ -98,11 +95,11 @@ public:
 		};
 		Element() {
 			color = RED;
-			right = NULL;
-			left = NULL;
-			parent = NULL;
-			_next = NULL;
-			_prev = NULL;
+			right = nullptr;
+			left = nullptr;
+			parent = nullptr;
+			_next = nullptr;
+			_prev = nullptr;
 		};
 	};
 
@@ -121,7 +118,7 @@ private:
 #else
 			_nil = (Element *)&_GlobalNilClass::_nil;
 #endif
-			_root = NULL;
+			_root = nullptr;
 			size_cache = 0;
 		}
 
@@ -136,7 +133,7 @@ private:
 
 			if (_root) {
 				memdelete_allocator<Element, A>(_root);
-				_root = NULL;
+				_root = nullptr;
 			}
 		}
 
@@ -208,7 +205,7 @@ private:
 			}
 
 			if (node->parent == _data._root)
-				return NULL; // No successor, as p_node = last node
+				return nullptr; // No successor, as p_node = last node
 			return node->parent;
 		}
 	}
@@ -230,7 +227,7 @@ private:
 			}
 
 			if (node == _data._root)
-				return NULL; // No predecessor, as p_node = first node
+				return nullptr; // No predecessor, as p_node = first node
 			return node->parent;
 		}
 	}
@@ -249,13 +246,13 @@ private:
 				return node; // found
 		}
 
-		return NULL;
+		return nullptr;
 	}
 
 	Element *_find_closest(const K &p_key) const {
 
 		Element *node = _data._root->left;
-		Element *prev = NULL;
+		Element *prev = nullptr;
 		C less;
 
 		while (node != _data._nil) {
@@ -269,8 +266,8 @@ private:
 				return node; // found
 		}
 
-		if (prev == NULL)
-			return NULL; // tree empty
+		if (prev == nullptr)
+			return nullptr; // tree empty
 
 		if (less(p_key, prev->_key))
 			prev = prev->_prev;
@@ -522,7 +519,7 @@ public:
 	const Element *find(const K &p_key) const {
 
 		if (!_data._root)
-			return NULL;
+			return nullptr;
 
 		const Element *res = _find(p_key);
 		return res;
@@ -531,7 +528,7 @@ public:
 	Element *find(const K &p_key) {
 
 		if (!_data._root)
-			return NULL;
+			return nullptr;
 
 		Element *res = _find(p_key);
 		return res;
@@ -540,7 +537,7 @@ public:
 	const Element *find_closest(const K &p_key) const {
 
 		if (!_data._root)
-			return NULL;
+			return nullptr;
 
 		const Element *res = _find_closest(p_key);
 		return res;
@@ -549,7 +546,7 @@ public:
 	Element *find_closest(const K &p_key) {
 
 		if (!_data._root)
-			return NULL;
+			return nullptr;
 
 		Element *res = _find_closest(p_key);
 		return res;
@@ -557,7 +554,7 @@ public:
 
 	bool has(const K &p_key) const {
 
-		return find(p_key) != NULL;
+		return find(p_key) != nullptr;
 	}
 
 	Element *insert(const K &p_key, const V &p_value) {
@@ -615,11 +612,11 @@ public:
 	Element *front() const {
 
 		if (!_data._root)
-			return NULL;
+			return nullptr;
 
 		Element *e = _data._root->left;
 		if (e == _data._nil)
-			return NULL;
+			return nullptr;
 
 		while (e->left != _data._nil)
 			e = e->left;
@@ -630,11 +627,11 @@ public:
 	Element *back() const {
 
 		if (!_data._root)
-			return NULL;
+			return nullptr;
 
 		Element *e = _data._root->left;
 		if (e == _data._nil)
-			return NULL;
+			return nullptr;
 
 		while (e->right != _data._nil)
 			e = e->right;
@@ -685,4 +682,4 @@ public:
 	}
 };
 
-#endif
+#endif // MAP_H

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -109,11 +109,11 @@ godot_real GDAPI godot_vector2_angle_to_point(const godot_vector2 *p_self, const
 	return self->angle_to_point(*to);
 }
 
-godot_vector2 GDAPI godot_vector2_linear_interpolate(const godot_vector2 *p_self, const godot_vector2 *p_b, const godot_real p_t) {
+godot_vector2 GDAPI godot_vector2_lerp(const godot_vector2 *p_self, const godot_vector2 *p_b, const godot_real p_t) {
 	godot_vector2 dest;
 	const Vector2 *self = (const Vector2 *)p_self;
 	const Vector2 *b = (const Vector2 *)p_b;
-	*((Vector2 *)&dest) = self->linear_interpolate(*b, p_t);
+	*((Vector2 *)&dest) = self->lerp(*b, p_t);
 	return dest;
 }
 

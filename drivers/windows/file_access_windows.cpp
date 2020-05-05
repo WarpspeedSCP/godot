@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -38,6 +38,7 @@
 #include <shlwapi.h>
 #include <windows.h>
 
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <tchar.h>
@@ -95,13 +96,13 @@ Error FileAccessWindows::_open(const String &p_path, int p_mode_flags) {
 	if (p_mode_flags == READ) {
 		WIN32_FIND_DATAW d;
 		HANDLE f = FindFirstFileW(path.c_str(), &d);
-		if (f) {
+		if (f != INVALID_HANDLE_VALUE) {
 			String fname = d.cFileName;
 			if (fname != String()) {
 
 				String base_file = path.get_file();
 				if (base_file != fname && base_file.findn(fname) == 0) {
-					WARN_PRINTS("Case mismatch opening requested file '" + base_file + "', stored as '" + fname + "' in the filesystem. This file will not open when exported to other case-sensitive platforms.");
+					WARN_PRINT("Case mismatch opening requested file '" + base_file + "', stored as '" + fname + "' in the filesystem. This file will not open when exported to other case-sensitive platforms.");
 				}
 			}
 			FindClose(f);
@@ -114,24 +115,32 @@ Error FileAccessWindows::_open(const String &p_path, int p_mode_flags) {
 		path = path + ".tmp";
 	}
 
-	_wfopen_s(&f, path.c_str(), mode_string);
+	errno_t errcode = _wfopen_s(&f, path.c_str(), mode_string);
 
-	if (f == NULL) {
-		last_error = ERR_FILE_CANT_OPEN;
-		return ERR_FILE_CANT_OPEN;
+	if (f == nullptr) {
+		switch (errcode) {
+			case ENOENT: {
+				last_error = ERR_FILE_NOT_FOUND;
+			} break;
+			default: {
+				last_error = ERR_FILE_CANT_OPEN;
+			} break;
+		}
+		return last_error;
 	} else {
 		last_error = OK;
 		flags = p_mode_flags;
 		return OK;
 	}
 }
+
 void FileAccessWindows::close() {
 
 	if (!f)
 		return;
 
 	fclose(f);
-	f = NULL;
+	f = nullptr;
 
 	if (save_path != "") {
 
@@ -155,7 +164,7 @@ void FileAccessWindows::close() {
 				rename_error = _wrename((save_path + ".tmp").c_str(), save_path.c_str()) != 0;
 			} else {
 				//atomic replace for existing file
-				rename_error = !ReplaceFileW(save_path.c_str(), (save_path + ".tmp").c_str(), NULL, 2 | 4, NULL, NULL);
+				rename_error = !ReplaceFileW(save_path.c_str(), (save_path + ".tmp").c_str(), nullptr, 2 | 4, nullptr, nullptr);
 			}
 			if (rename_error) {
 				attempts--;
@@ -167,13 +176,11 @@ void FileAccessWindows::close() {
 			if (close_fail_notify) {
 				close_fail_notify(save_path);
 			}
-
-			ERR_EXPLAIN("Safe save failed. This may be a permissions problem, but also may happen because you are running a paranoid antivirus. If this is the case, please switch to Windows Defender or disable the 'safe save' option in editor settings. This makes it work, but increases the risk of file corruption in a crash.");
 		}
 
 		save_path = "";
 
-		ERR_FAIL_COND(rename_error);
+		ERR_FAIL_COND_MSG(rename_error, "Safe save failed. This may be a permissions problem, but also may happen because you are running a paranoid antivirus. If this is the case, please switch to Windows Defender or disable the 'safe save' option in editor settings. This makes it work, but increases the risk of file corruption in a crash.");
 	}
 }
 
@@ -189,7 +196,7 @@ String FileAccessWindows::get_path_absolute() const {
 
 bool FileAccessWindows::is_open() const {
 
-	return (f != NULL);
+	return (f != nullptr);
 }
 void FileAccessWindows::seek(size_t p_position) {
 
@@ -311,7 +318,7 @@ bool FileAccessWindows::file_exists(const String &p_name) {
 	//printf("opening file %s\n", p_fname.c_str());
 	String filename = fix_path(p_name);
 	_wfopen_s(&g, filename.c_str(), L"rb");
-	if (g == NULL) {
+	if (g == nullptr) {
 
 		return false;
 	} else {
@@ -334,8 +341,7 @@ uint64_t FileAccessWindows::_get_modified_time(const String &p_file) {
 
 		return st.st_mtime;
 	} else {
-		ERR_EXPLAIN("Failed to get modified time for: " + file);
-		ERR_FAIL_V(0);
+		ERR_FAIL_V_MSG(0, "Failed to get modified time for: " + file + ".");
 	}
 }
 
@@ -348,7 +354,7 @@ Error FileAccessWindows::_set_unix_permissions(const String &p_file, uint32_t p_
 }
 
 FileAccessWindows::FileAccessWindows() :
-		f(NULL),
+		f(nullptr),
 		flags(0),
 		prev_op(0),
 		last_error(OK) {
